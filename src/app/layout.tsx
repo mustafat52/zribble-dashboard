@@ -4,6 +4,8 @@ import "./globals.css";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Topbar } from "@/components/layout/Topbar";
 import { ClientProvider } from "@/lib/client-context";
+import { AuthProvider } from "@/lib/auth-context";
+import { AppShell } from "@/components/layout/AppShell";
 
 const geistSans = Inter({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = JetBrains_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
@@ -17,11 +19,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased bg-slate-50 text-slate-800`}>
-        <ClientProvider>
-          <Sidebar />
-          <Topbar />
-          {children}
-        </ClientProvider>
+        <AuthProvider>
+          <ClientProvider>
+            <AppShell>{children}</AppShell>
+          </ClientProvider>
+        </AuthProvider>
       </body>
     </html>
   );

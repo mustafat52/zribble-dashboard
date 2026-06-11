@@ -2,6 +2,11 @@
 import { cn, formatCurrency } from "@/lib/utils";
 import { DASHBOARD_STATS, CONTRACTS } from "@/lib/mock-data";
 import { TrendingUp, Users, CalendarClock, CheckCircle2, AlertTriangle, Clock, IndianRupee, ArrowUpRight, UserPlus, RefreshCw } from "lucide-react";
+import { DateRange } from "@/app/dashboard/page";
+
+interface StatCardsProps {
+  range: DateRange;
+}
 
 interface StatCardProps {
   label: string; value: string; sub?: string; icon: React.ReactNode;
@@ -10,12 +15,12 @@ interface StatCardProps {
 }
 
 const ACCENT_STYLES = {
-  indigo: { icon: "bg-accent-light text-accent",        border: "border-accent-border",  top: "bg-accent"        },
-  green:  { icon: "bg-accent-greenLight text-accent-green", border: "border-emerald-200", top: "bg-accent-green"  },
-  amber:  { icon: "bg-accent-amberLight text-accent-amber", border: "border-amber-200",   top: "bg-accent-amber"  },
-  red:    { icon: "bg-accent-redLight text-accent-red",     border: "border-red-200",     top: "bg-accent-red"    },
-  purple: { icon: "bg-purple-50 text-accent-purple",        border: "border-purple-200",  top: "bg-accent-purple" },
-  cyan:   { icon: "bg-accent-cyanLight text-accent-cyan",   border: "border-cyan-200",    top: "bg-accent-cyan"   },
+  indigo: { icon: "bg-accent-light text-accent",            border: "border-accent-border",  top: "bg-accent"        },
+  green:  { icon: "bg-accent-greenLight text-accent-green", border: "border-emerald-200",    top: "bg-accent-green"  },
+  amber:  { icon: "bg-accent-amberLight text-accent-amber", border: "border-amber-200",      top: "bg-accent-amber"  },
+  red:    { icon: "bg-accent-redLight text-accent-red",     border: "border-red-200",        top: "bg-accent-red"    },
+  purple: { icon: "bg-purple-50 text-accent-purple",        border: "border-purple-200",     top: "bg-accent-purple" },
+  cyan:   { icon: "bg-accent-cyanLight text-accent-cyan",   border: "border-cyan-200",       top: "bg-accent-cyan"   },
 };
 
 function StatCard({ label, value, sub, icon, trend, trendUp, accent = "indigo" }: StatCardProps) {
@@ -42,16 +47,28 @@ function StatCard({ label, value, sub, icon, trend, trendUp, accent = "indigo" }
   );
 }
 
-export function StatCards() {
-  const s = DASHBOARD_STATS;
-  const collectionRate = s.thisMonthExpected > 0 ? Math.round((s.thisMonthCollected / s.thisMonthExpected) * 100) : 0;
+function inRange(year: number, month: number, range: DateRange) {
+  const val = year * 100 + month;
+  return val >= range.fromYear * 100 + range.fromMonth &&
+         val <= range.toYear   * 100 + range.toMonth;
+}
 
-  // Current month context (Jun 2026 — app launch month)
+export function StatCards({ range }: StatCardsProps) {
+  const s = DASHBOARD_STATS;
+  const collectionRate = s.thisMonthExpected > 0
+    ? Math.round((s.thisMonthCollected / s.thisMonthExpected) * 100)
+    : 0;
+
+  // Total pipeline filtered to selected range
+  const rangePipeline = CONTRACTS.reduce((sum, c) => {
+    return sum + c.renewalSchedule
+      .filter((r) => inRange(r.year, r.month, range))
+      .reduce((a, r) => a + r.amount, 0);
+  }, 0);
+
   const NOW_YEAR  = 2026;
   const NOW_MONTH = 6;
 
-  // New clients this month = contracts created in current month
-  // (In real app, createdAt will be accurate; for mock data all are 2026-06-01 so we get realistic numbers)
   const newClientsThisMonth = new Set(
     CONTRACTS
       .filter((c) => {
@@ -61,25 +78,26 @@ export function StatCards() {
       .map((c) => c.clientName)
   ).size;
 
-  // Renewals due this month = renewal slots for current month across all contracts
   const renewalsDueThisMonth = CONTRACTS.reduce((count, c) => {
     return count + c.renewalSchedule.filter(
-      (r) => r.year === NOW_YEAR && r.month === NOW_MONTH + 1 // Jul is first renewal month
+      (r) => r.year === NOW_YEAR && r.month === NOW_MONTH + 1
     ).length;
   }, 0);
+
   const cards: StatCardProps[] = [
-    { label: "Total Pipeline",  value: formatCurrency(s.totalPipeline),       sub: "Jul 2026 – Dec 2028",    icon: <IndianRupee className="w-4 h-4" />,  accent: "indigo", trend: "+12%", trendUp: true },
+    { label: "Total Pipeline",  value: formatCurrency(rangePipeline),          sub: `Next ${range.months} months`,    icon: <IndianRupee className="w-4 h-4" />,  accent: "indigo", trend: "+12%", trendUp: true },
     { label: "Active Accounts", value: s.totalAccounts.toString(),             sub: "Across 6 executives",    icon: <Users className="w-4 h-4" />,        accent: "cyan"   },
     { label: "Jul Expected",    value: formatCurrency(s.thisMonthExpected),    sub: "This month's renewals",  icon: <CalendarClock className="w-4 h-4" />, accent: "purple" },
     { label: "Jul Collected",   value: formatCurrency(s.thisMonthCollected),   sub: `${collectionRate}% collection rate`, icon: <CheckCircle2 className="w-4 h-4" />, accent: "green", trend: `${collectionRate}%`, trendUp: collectionRate >= 70 },
     { label: "Jul Pending",     value: formatCurrency(s.thisMonthPending),     sub: "Outstanding balance",    icon: <Clock className="w-4 h-4" />,        accent: "amber"  },
     { label: "Overdue",         value: s.overdueCount.toString(),              sub: formatCurrency(s.overdueValue) + " at risk", icon: <AlertTriangle className="w-4 h-4" />, accent: "red" },
   ];
+
   return (
     <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
       {cards.map((card) => <StatCard key={card.label} {...card} />)}
 
-      {/* New Clients vs Renewals widget — spans full width on mobile, 2 cols on larger */}
+      {/* New Clients vs Renewals widget */}
       <div className="col-span-2 md:col-span-3 xl:col-span-6 bg-white border border-slate-200 rounded-xl px-5 py-4 shadow-card flex items-center gap-6">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-lg bg-accent-light flex items-center justify-center flex-shrink-0">
@@ -113,20 +131,14 @@ export function StatCards() {
             <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden flex">
               {renewalsDueThisMonth + newClientsThisMonth > 0 && (
                 <>
-                  <div
-                    className="h-full bg-accent rounded-l-full transition-all duration-500"
-                    style={{ width: `${Math.round((newClientsThisMonth / (renewalsDueThisMonth + newClientsThisMonth)) * 100)}%` }}
-                  />
-                  <div
-                    className="h-full bg-accent-green rounded-r-full transition-all duration-500"
-                    style={{ width: `${Math.round((renewalsDueThisMonth / (renewalsDueThisMonth + newClientsThisMonth)) * 100)}%` }}
-                  />
+                  <div className="h-full bg-accent rounded-l-full transition-all duration-500"
+                    style={{ width: `${Math.round((newClientsThisMonth / (renewalsDueThisMonth + newClientsThisMonth)) * 100)}%` }} />
+                  <div className="h-full bg-accent-green rounded-r-full transition-all duration-500"
+                    style={{ width: `${Math.round((renewalsDueThisMonth / (renewalsDueThisMonth + newClientsThisMonth)) * 100)}%` }} />
                 </>
               )}
             </div>
-            <span className="text-xs text-slate-500 flex-shrink-0">
-              {renewalsDueThisMonth + newClientsThisMonth} total
-            </span>
+            <span className="text-xs text-slate-500 flex-shrink-0">{renewalsDueThisMonth + newClientsThisMonth} total</span>
           </div>
           <div className="flex items-center gap-4 mt-1.5">
             <span className="flex items-center gap-1 text-[10px] text-slate-400">

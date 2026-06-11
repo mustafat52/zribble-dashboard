@@ -1,9 +1,10 @@
 "use client";
 import { usePathname } from "next/navigation";
-import { Search, Bell, RefreshCw } from "lucide-react";
+import { Search, Bell, RefreshCw, Shield } from "lucide-react";
 import { useState, useEffect } from "react";
 import { cn, formatCurrency } from "@/lib/utils";
 import { DASHBOARD_STATS } from "@/lib/mock-data";
+import { useAuth } from "@/lib/auth-context";
 
 const PAGE_TITLES: Record<string, { title: string; subtitle: string }> = {
   "/dashboard":   { title: "Dashboard",        subtitle: "Command center — portfolio overview"          },
@@ -12,18 +13,26 @@ const PAGE_TITLES: Record<string, { title: string; subtitle: string }> = {
   "/clients":     { title: "Clients",           subtitle: "All accounts and contract details"           },
   "/salesperson": { title: "Salesperson View",  subtitle: "Per-executive portfolio breakdown"           },
   "/new-entry":   { title: "New Entry",         subtitle: "Add a new client contract"                  },
+  "/settings":    { title: "Settings",          subtitle: "Users and application preferences"           },
+};
+
+const ROLE_BADGE: Record<string, { label: string; cls: string }> = {
+  super_admin:   { label: "Super Admin", cls: "bg-accent-light text-accent border-accent-border"         },
+  accounts_team: { label: "Accounts",   cls: "bg-cyan-50 text-accent-cyan border-cyan-200"              },
+  employee:      { label: "Executive",  cls: "bg-slate-100 text-slate-600 border-slate-200"             },
 };
 
 export function Topbar() {
   const pathname    = usePathname();
+  const { user }    = useAuth();
   const [searchOpen, setSearchOpen] = useState(false);
   const [mounted,    setMounted]    = useState(false);
 
-  // Only render dynamic stats on client to avoid hydration mismatch
   useEffect(() => { setMounted(true); }, []);
 
   const page    = PAGE_TITLES[pathname] ?? { title: "RenewalOS", subtitle: "" };
   const overdue = DASHBOARD_STATS.overdueCount;
+  const badge   = user ? ROLE_BADGE[user.role] : null;
 
   return (
     <header className="fixed top-0 left-60 right-0 h-14 bg-white/95 backdrop-blur-md border-b border-slate-200 z-30 flex items-center px-6 gap-4 shadow-sm">
@@ -55,7 +64,7 @@ export function Topbar() {
         </button>
       </div>
 
-      {/* Stats pill — client only to prevent hydration mismatch */}
+      {/* Stats pill */}
       {mounted && (
         <div className="hidden lg:flex items-center gap-3 px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-200">
           <div className="text-center">
@@ -72,6 +81,15 @@ export function Topbar() {
             <p className="text-[10px] text-slate-400 leading-none">Pending</p>
             <p className="text-xs font-semibold text-accent-amber mt-0.5">{formatCurrency(DASHBOARD_STATS.thisMonthPending)}</p>
           </div>
+        </div>
+      )}
+
+      {/* Role badge */}
+      {mounted && badge && (
+        <div className={cn("hidden sm:flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full border", badge.cls)}>
+          <Shield className="w-3 h-3" />
+          {badge.label}
+          {user?.salesperson && <span className="text-current/70">· {user.salesperson}</span>}
         </div>
       )}
 

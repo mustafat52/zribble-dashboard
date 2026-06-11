@@ -1,8 +1,12 @@
 "use client";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { cn, SALESPERSON_COLORS } from "@/lib/utils";
-import { LayoutDashboard, CalendarDays, CreditCard, Users, UserCircle, PlusCircle, TrendingUp, ChevronRight, Bell } from "lucide-react";
+import { useAuth } from "@/lib/auth-context";
+import {
+  LayoutDashboard, CalendarDays, CreditCard, Users, UserCircle,
+  PlusCircle, TrendingUp, ChevronRight, Bell, Settings, LogOut,
+} from "lucide-react";
 
 const NAV_ITEMS = [
   { group: "Overview", items: [
@@ -29,7 +33,15 @@ const SALESPEOPLE = [
 ];
 
 export function Sidebar() {
-  const pathname = usePathname();
+  const pathname  = usePathname();
+  const router    = useRouter();
+  const { user, canPerform, logout } = useAuth();
+
+  function handleLogout() {
+    logout();
+    router.replace("/login");
+  }
+
   return (
     <aside className="fixed left-0 top-0 h-screen w-60 bg-white border-r border-slate-200 flex flex-col z-40 shadow-sm">
       {/* Logo */}
@@ -72,34 +84,62 @@ export function Sidebar() {
           </div>
         ))}
 
-        {/* Exec quick-links */}
+        {/* Settings — super_admin only */}
+        {canPerform("view_settings") && (
+          <div>
+            <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest px-2 mb-1.5">Admin</p>
+            <ul className="space-y-0.5">
+              <li>
+                <Link href="/settings" className={cn(
+                  "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-150 group",
+                  pathname === "/settings"
+                    ? "bg-accent-light text-accent border border-accent-border"
+                    : "text-slate-600 hover:text-slate-800 hover:bg-slate-50"
+                )}>
+                  <Settings className={cn("w-4 h-4 flex-shrink-0", pathname === "/settings" ? "text-accent" : "text-slate-400 group-hover:text-slate-600")} />
+                  Settings
+                  {pathname === "/settings" && <ChevronRight className="w-3 h-3 ml-auto text-accent/50" />}
+                </Link>
+              </li>
+            </ul>
+          </div>
+        )}
+
+        {/* Exec quick-links — only show for super_admin / accounts_team; employees see only their own */}
         <div>
           <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest px-2 mb-1.5">Executives</p>
           <ul className="space-y-0.5">
-            {SALESPEOPLE.map(({ name, accounts }) => (
-              <li key={name}>
-                <Link href={`/salesperson?exec=${name}`} className="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm transition-all duration-150 text-slate-500 hover:text-slate-700 hover:bg-slate-50 group">
-                  <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: SALESPERSON_COLORS[name] }} />
-                  <span className="flex-1 text-xs">{name}</span>
-                  <span className="text-[10px] text-slate-400">{accounts}</span>
-                </Link>
-              </li>
-            ))}
+            {SALESPEOPLE
+              .filter((s) => canPerform("view_all") || user?.salesperson === s.name)
+              .map(({ name, accounts }) => (
+                <li key={name}>
+                  <Link href={`/salesperson?exec=${name}`} className="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm transition-all duration-150 text-slate-500 hover:text-slate-700 hover:bg-slate-50 group">
+                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: SALESPERSON_COLORS[name] }} />
+                    <span className="flex-1 text-xs">{name}</span>
+                    {canPerform("view_all") && <span className="text-[10px] text-slate-400">{accounts}</span>}
+                  </Link>
+                </li>
+              ))}
           </ul>
         </div>
       </nav>
 
-      {/* Footer */}
+      {/* Footer — user info + logout */}
       <div className="px-4 py-4 border-t border-slate-100">
         <div className="flex items-center gap-3">
-          <div className="w-7 h-7 rounded-full bg-accent-light flex items-center justify-center">
-            <UserCircle className="w-4 h-4 text-accent" />
+          <div className="w-7 h-7 rounded-full bg-accent-light flex items-center justify-center flex-shrink-0">
+            <span className="text-xs font-bold text-accent">{user?.name[0] ?? "?"}</span>
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-xs font-medium text-slate-700 truncate">Management</p>
-            <p className="text-[10px] text-slate-400">Admin</p>
+            <p className="text-xs font-medium text-slate-700 truncate">{user?.name ?? "—"}</p>
+            <p className="text-[10px] text-slate-400 truncate">
+              {user?.role === "super_admin" ? "Super Admin" : user?.role === "accounts_team" ? "Accounts" : `Executive · ${user?.mode === "view_edit" ? "Edit" : "View"}`}
+            </p>
           </div>
-          <Bell className="w-3.5 h-3.5 text-slate-400 hover:text-slate-600 cursor-pointer transition-colors" />
+          <button onClick={handleLogout} title="Sign out"
+            className="text-slate-400 hover:text-accent-red transition-colors p-1 rounded-lg hover:bg-accent-redLight flex-shrink-0">
+            <LogOut className="w-3.5 h-3.5" />
+          </button>
         </div>
       </div>
     </aside>

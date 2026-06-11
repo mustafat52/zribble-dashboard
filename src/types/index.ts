@@ -131,3 +131,28 @@ export interface OnboardingPayment {
   paidOn: string;
   notes?: string;
 }
+
+// ── ADD THESE to src/types/index.ts ──────────────────────────────────────────
+
+export interface ContractEdit {
+  id: string;
+  contractId: string;
+  editedAt: string;
+  editedBy: string;
+  changes: Partial<{
+    product: string;
+    dealValue: number;
+    accountManager: string;
+    contractTermMonths: number;
+    profiles: number;
+    gstStatus: "Y" | "N";
+  }>;
+  previousValues: Partial<{
+    product: string;
+    dealValue: number;
+    accountManager: string;
+    contractTermMonths: number;
+    profiles: number;
+    gstStatus: "Y" | "N";
+  }>;
+}

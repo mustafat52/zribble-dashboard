@@ -1,8 +1,14 @@
 "use client";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
-import { SALES_SUMMARY } from "@/lib/mock-data";
+import { CONTRACTS } from "@/lib/mock-data";
 import { formatCurrency, SALESPERSON_COLORS } from "@/lib/utils";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/Card";
+import { DateRange } from "@/app/dashboard/page";
+import { Salesperson } from "@/types";
+
+interface PipelineDonutProps {
+  range: DateRange;
+}
 
 const CustomTooltip = ({ active, payload }: any) => {
   if (!active || !payload?.length) return null;
@@ -15,21 +21,43 @@ const CustomTooltip = ({ active, payload }: any) => {
   );
 };
 
-export function PipelineDonut() {
-  const data = SALES_SUMMARY.map((s) => ({ name: s.salesperson, value: s.totalPipeline }));
+function inRange(year: number, month: number, range: DateRange) {
+  const val = year * 100 + month;
+  return val >= range.fromYear * 100 + range.fromMonth &&
+         val <= range.toYear   * 100 + range.toMonth;
+}
+
+export function PipelineDonut({ range }: PipelineDonutProps) {
+  // Re-compute pipeline per salesperson for the selected range
+  const totals: Record<string, number> = {};
+  CONTRACTS.forEach((c) => {
+    c.renewalSchedule.forEach((r) => {
+      if (inRange(r.year, r.month, range)) {
+        totals[c.salesperson] = (totals[c.salesperson] ?? 0) + r.amount;
+      }
+    });
+  });
+
+  const data = Object.entries(totals)
+    .map(([name, value]) => ({ name, value }))
+    .sort((a, b) => b.value - a.value);
+
   const total = data.reduce((a, d) => a + d.value, 0);
+
   return (
     <Card>
       <CardHeader>
         <CardTitle>Pipeline Share</CardTitle>
-        <p className="text-xs text-slate-400 mt-0.5">{formatCurrency(total)} total</p>
+        <p className="text-xs text-slate-400 mt-0.5">{formatCurrency(total)} · {range.months}m pipeline</p>
       </CardHeader>
       <CardContent>
         <div className="h-44 relative">
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
               <Pie data={data} cx="50%" cy="50%" innerRadius={52} outerRadius={72} paddingAngle={3} dataKey="value" strokeWidth={0}>
-                {data.map((entry) => <Cell key={entry.name} fill={SALESPERSON_COLORS[entry.name]} />)}
+                {data.map((entry) => (
+                  <Cell key={entry.name} fill={SALESPERSON_COLORS[entry.name as Salesperson] ?? "#94A3B8"} />
+                ))}
               </Pie>
               <Tooltip content={<CustomTooltip />} />
             </PieChart>
@@ -44,7 +72,8 @@ export function PipelineDonut() {
             const pct = Math.round((d.value / total) * 100);
             return (
               <div key={d.name} className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: SALESPERSON_COLORS[d.name] }} />
+                <span className="w-2 h-2 rounded-full flex-shrink-0"
+                  style={{ backgroundColor: SALESPERSON_COLORS[d.name as Salesperson] ?? "#94A3B8" }} />
                 <span className="text-xs text-slate-500 flex-1">{d.name}</span>
                 <span className="text-xs text-slate-400">{pct}%</span>
               </div>

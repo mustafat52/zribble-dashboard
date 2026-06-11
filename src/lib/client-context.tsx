@@ -1,6 +1,6 @@
 "use client";
 import { createContext, useContext, useState, useCallback, ReactNode } from "react";
-import { Contract, ClientNote, OnboardingPayment } from "@/types";
+import { Contract, ClientNote, OnboardingPayment, ContractEdit } from "@/types";
 import { CONTRACTS } from "./mock-data";
 import { ClientDetailModal } from "@/components/clients/ClientDetailModal";
 import { PaymentPromise } from "@/components/renewals/PaymentModal";
@@ -21,6 +21,17 @@ interface ClientContextValue {
   getOnboardingPayment: (clientName: string) => OnboardingPayment | undefined;
   getEffectiveAmount: (contractId: string, year: number, month: number, baseAmount: number) => number;
   recordPayment: (data: any) => void;
+  // Contract editing
+  contractEdits: Record<string, ContractEdit[]>;          // contractId → edits
+  stoppedContracts: Set<string>;                          // contractIds stopped individually
+  additionalContracts: Contract[];                        // new services added via modal
+  editContract: (contractId: string, changes: Partial<Contract>, previous: Partial<Contract>) => void;
+  stopContract: (contractId: string) => void;
+  reactivateContract: (contractId: string) => void;
+  isContractStopped: (contractId: string) => boolean;
+  addContract: (contract: Contract) => void;
+  getContractEdits: (contractId: string) => ContractEdit[];
+  getEffectiveContract: (contract: Contract) => Contract;  // returns contract with edits applied
 }
 
 const ClientContext = createContext<ClientContextValue | null>(null);
@@ -33,11 +44,17 @@ export function ClientProvider({ children }: { children: ReactNode }) {
   const [notes,             setNotes]             = useState<ClientNote[]>([]);
   const [onboardingPayments, setOnboardingPayments] = useState<OnboardingPayment[]>([]);
   const [priceOverrides, setPriceOverrides] = useState<Record<string, { fromYear: number; fromMonth: number; newAmount: number }[]>>({});
+  // Contract editing state
+  const [contractEdits,      setContractEdits]      = useState<Record<string, ContractEdit[]>>({});
+  const [stoppedContracts,   setStoppedContracts]   = useState<Set<string>>(new Set());
+  const [additionalContracts, setAdditionalContracts] = useState<Contract[]>([]);
 
   const openClient = useCallback((clientName: string) => {
-    const contracts = CONTRACTS.filter((c) => c.clientName === clientName);
-    if (contracts.length) { setSelectedContracts(contracts); setOpen(true); }
-  }, []);
+    const base  = CONTRACTS.filter((c) => c.clientName === clientName);
+    const extra = additionalContracts.filter((c) => c.clientName === clientName);
+    const all   = [...base, ...extra];
+    if (all.length) { setSelectedContracts(all); setOpen(true); }
+  }, [additionalContracts]);
 
   const stopClient = useCallback((clientName: string) => {
     setStoppedClients((prev) => new Set(Array.from(prev).concat(clientName)));
@@ -68,11 +85,7 @@ export function ClientProvider({ children }: { children: ReactNode }) {
   const addOnboardingPayment = useCallback((p: OnboardingPayment) => {
     setOnboardingPayments((prev) => {
       const exists = prev.findIndex((x) => x.clientName === p.clientName);
-      if (exists >= 0) {
-        const next = [...prev];
-        next[exists] = p;
-        return next;
-      }
+      if (exists >= 0) { const next = [...prev]; next[exists] = p; return next; }
       return [...prev, p];
     });
   }, []);
@@ -93,11 +106,9 @@ export function ClientProvider({ children }: { children: ReactNode }) {
     [priceOverrides]
   );
 
-  // Exposed via context so ClientDetailModal can call it directly — avoids stale closure
   const recordPayment = useCallback((data: any) => {
-    const contract = CONTRACTS.find((c) => c.id === data.contractId);
+    const contract = [...CONTRACTS, ...additionalContracts].find((c) => c.id === data.contractId);
 
-    // ── Multi-promise: loop over promises array ──
     if (data.promises && Array.isArray(data.promises) && data.promises.length > 0 && contract) {
       const renewalAmount = contract.renewalSchedule.find(
         (r) => r.year === data.year && r.month === data.month
@@ -120,12 +131,9 @@ export function ClientProvider({ children }: { children: ReactNode }) {
           createdAt:       new Date().toISOString(),
         }));
 
-      if (newPromises.length > 0) {
-        setPromises((prev) => [...prev, ...newPromises]);
-      }
+      if (newPromises.length > 0) setPromises((prev) => [...prev, ...newPromises]);
     }
 
-    // ── Cascading price override ──
     if (data.overrideAmount && data.cascadeFromYear && data.cascadeFromMonth) {
       setPriceOverrides((prev) => {
         const existing = prev[data.contractId] ?? [];
@@ -138,7 +146,55 @@ export function ClientProvider({ children }: { children: ReactNode }) {
         };
       });
     }
+  }, [additionalContracts]);
+
+  // ── Contract editing ──────────────────────────────────────────────────────
+  const editContract = useCallback((contractId: string, changes: Partial<Contract>, previous: Partial<Contract>) => {
+    const edit: ContractEdit = {
+      id:             `edit-${Date.now()}`,
+      contractId,
+      editedAt:       new Date().toISOString(),
+      editedBy:       "Management",
+      changes:        changes as any,
+      previousValues: previous as any,
+    };
+    setContractEdits((prev) => ({
+      ...prev,
+      [contractId]: [...(prev[contractId] ?? []), edit],
+    }));
   }, []);
+
+  const stopContract = useCallback((contractId: string) => {
+    setStoppedContracts((prev) => new Set(Array.from(prev).concat(contractId)));
+  }, []);
+
+  const reactivateContract = useCallback((contractId: string) => {
+    setStoppedContracts((prev) => { const next = new Set(prev); next.delete(contractId); return next; });
+  }, []);
+
+  const isContractStopped = useCallback(
+    (contractId: string) => stoppedContracts.has(contractId),
+    [stoppedContracts]
+  );
+
+  const addContract = useCallback((contract: Contract) => {
+    setAdditionalContracts((prev) => [...prev, contract]);
+    // Re-open the modal with the updated contract list
+    setSelectedContracts((prev) => [...prev, contract]);
+  }, []);
+
+  const getContractEdits = useCallback(
+    (contractId: string) => contractEdits[contractId] ?? [],
+    [contractEdits]
+  );
+
+  // Returns a contract with all edits applied (latest edit wins per field)
+  const getEffectiveContract = useCallback((contract: Contract): Contract => {
+    const edits = contractEdits[contract.id] ?? [];
+    if (!edits.length) return contract;
+    const merged = edits.reduce((acc, edit) => ({ ...acc, ...edit.changes }), {} as Partial<Contract>);
+    return { ...contract, ...merged };
+  }, [contractEdits]);
 
   const clientName = selectedContracts[0]?.clientName ?? "";
 
@@ -149,6 +205,9 @@ export function ClientProvider({ children }: { children: ReactNode }) {
       notes, addNote, getNotesForClient,
       onboardingPayments, addOnboardingPayment, getOnboardingPayment,
       getEffectiveAmount, recordPayment,
+      contractEdits, stoppedContracts, additionalContracts,
+      editContract, stopContract, reactivateContract, isContractStopped,
+      addContract, getContractEdits, getEffectiveContract,
     }}>
       {children}
       <ClientDetailModal
