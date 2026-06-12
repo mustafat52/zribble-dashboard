@@ -1,18 +1,29 @@
 "use client";
-import { SALES_SUMMARY } from "@/lib/mock-data";
+import { SALES_SUMMARY, CONTRACTS } from "@/lib/mock-data";
 import { formatCurrency, SALESPERSON_COLORS } from "@/lib/utils";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/Card";
 import { Table, THead, Th, TBody, Tr, Td } from "@/components/ui/Table";
 import { useRouter } from "next/navigation";
+import { useAuth } from "@/lib/auth-context";
 
 export function SalespersonTable() {
   const router = useRouter();
-  const total = SALES_SUMMARY.reduce((a, s) => a + s.totalPipeline, 0);
+  const { user, canPerform } = useAuth();
+  const execFilter = canPerform("view_all") ? null : user?.salesperson ?? null;
+
+  const summary = execFilter
+    ? SALES_SUMMARY.filter((s) => s.salesperson === execFilter)
+    : SALES_SUMMARY;
+
+  const total = summary.reduce((a, s) => a + s.totalPipeline, 0);
+
   return (
     <Card>
       <CardHeader>
         <CardTitle>Executive Breakdown</CardTitle>
-        <p className="text-xs text-slate-400 mt-0.5">Portfolio value by salesperson</p>
+        <p className="text-xs text-slate-400 mt-0.5">
+          {execFilter ? `${execFilter}'s portfolio` : "Portfolio value by salesperson"}
+        </p>
       </CardHeader>
       <CardContent className="px-0 py-0">
         <Table>
@@ -20,7 +31,7 @@ export function SalespersonTable() {
             <Th>Executive</Th><Th>Accounts</Th><Th>2026</Th><Th>2027</Th><Th>2028</Th><Th>Pipeline %</Th>
           </THead>
           <TBody>
-            {SALES_SUMMARY.map((s) => {
+            {summary.map((s) => {
               const pct   = Math.round((s.totalPipeline / total) * 100);
               const color = SALESPERSON_COLORS[s.salesperson];
               return (
@@ -38,7 +49,7 @@ export function SalespersonTable() {
                   <Td>
                     <div className="flex items-center gap-2">
                       <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden w-16">
-                        <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, backgroundColor: color }} />
+                        <div className="h-full rounded-full transition-all duration-500" style={{ width:`${pct}%`, backgroundColor:color }} />
                       </div>
                       <span className="text-xs text-slate-400 w-7">{pct}%</span>
                     </div>

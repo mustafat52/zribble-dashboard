@@ -13,6 +13,7 @@ import { Search, Users, LayoutGrid, List } from "lucide-react";
 interface ClientListProps {
   onSelectClient: (contracts: Contract[]) => void;
   stoppedClients?: (name: string) => boolean;
+  salespersonFilter?: string | null; // if set, locks to this exec and hides filter buttons
 }
 
 const SALESPERSONS = ["All","Aftab","Sarvesh","Firoz","Idris","Prajay","Vinay"];
@@ -24,72 +25,81 @@ const SORT_OPTS = [
 ];
 const STATUS_FILTERS = ["All", "Active", "Stopped"];
 
-export function ClientList({ onSelectClient, stoppedClients }: ClientListProps) {
-  const [search,     setSearch]     = useState("");
-  const [execFilter, setExecFilter] = useState("All");
-  const [sortBy,     setSortBy]     = useState("name");
+export function ClientList({ onSelectClient, stoppedClients, salespersonFilter }: ClientListProps) {
+  const [search,       setSearch]       = useState("");
+  const [execFilter,   setExecFilter]   = useState("All");
+  const [sortBy,       setSortBy]       = useState("name");
   const [viewMode,     setViewMode]     = useState<"grid"|"list">("grid");
   const [statusFilter, setStatusFilter] = useState("All");
 
-  const clientMap = useMemo(()=>{
-    const map: Record<string,Contract[]> = {};
-    CONTRACTS.forEach((c)=>{ if(!map[c.clientName]) map[c.clientName]=[]; map[c.clientName].push(c); });
-    return map;
-  },[]);
+  // If a salesperson filter is locked in from auth, use it; otherwise use internal filter state
+  const activeExecFilter = salespersonFilter ?? (execFilter === "All" ? null : execFilter);
 
-  const clients = useMemo(()=>{
+  const clientMap = useMemo(() => {
+    const map: Record<string, Contract[]> = {};
+    CONTRACTS.forEach((c) => { if (!map[c.clientName]) map[c.clientName] = []; map[c.clientName].push(c); });
+    return map;
+  }, []);
+
+  const clients = useMemo(() => {
     let entries = Object.entries(clientMap);
-    if (execFilter!=="All") entries=entries.filter(([,cs])=>cs.some((c)=>c.salesperson===execFilter));
-    if (statusFilter==="Active")  entries=entries.filter(([name])=>!stoppedClients?.(name));
-    if (statusFilter==="Stopped") entries=entries.filter(([name])=>stoppedClients?.(name));
-    if (search.trim()) entries=entries.filter(([name,cs])=>
-      name.toLowerCase().includes(search.toLowerCase())||
-      cs.some((c)=>c.accountManager.toLowerCase().includes(search.toLowerCase())||c.salesperson.toLowerCase().includes(search.toLowerCase()))
+    if (activeExecFilter) entries = entries.filter(([, cs]) => cs.some((c) => c.salesperson === activeExecFilter));
+    if (statusFilter === "Active")  entries = entries.filter(([name]) => !stoppedClients?.(name));
+    if (statusFilter === "Stopped") entries = entries.filter(([name]) => stoppedClients?.(name));
+    if (search.trim()) entries = entries.filter(([name, cs]) =>
+      name.toLowerCase().includes(search.toLowerCase()) ||
+      cs.some((c) => c.accountManager.toLowerCase().includes(search.toLowerCase()) || c.salesperson.toLowerCase().includes(search.toLowerCase()))
     );
-    entries.sort(([nameA,csA],[nameB,csB])=>{
-      if (sortBy==="name")    return nameA.localeCompare(nameB);
-      if (sortBy==="value")   return csB.reduce((a,c)=>a+c.dealValue,0)-csA.reduce((a,c)=>a+c.dealValue,0);
-      if (sortBy==="exec")    return csA[0].salesperson.localeCompare(csB[0].salesperson);
-      if (sortBy==="renewal") {
-        const getNext=(cs:Contract[])=>cs.flatMap((c)=>c.renewalSchedule).map((r)=>r.year*100+r.month).sort()[0]??999999;
-        return getNext(csA)-getNext(csB);
+    entries.sort(([nameA, csA], [nameB, csB]) => {
+      if (sortBy === "name")    return nameA.localeCompare(nameB);
+      if (sortBy === "value")   return csB.reduce((a,c)=>a+c.dealValue,0) - csA.reduce((a,c)=>a+c.dealValue,0);
+      if (sortBy === "exec")    return csA[0].salesperson.localeCompare(csB[0].salesperson);
+      if (sortBy === "renewal") {
+        const getNext = (cs: Contract[]) => cs.flatMap((c) => c.renewalSchedule).map((r) => r.year*100+r.month).sort()[0] ?? 999999;
+        return getNext(csA) - getNext(csB);
       }
       return 0;
     });
     return entries;
-  },[clientMap,execFilter,statusFilter,search,sortBy,stoppedClients]);
+  }, [clientMap, activeExecFilter, statusFilter, search, sortBy, stoppedClients]);
 
   return (
     <div className="flex flex-col gap-4">
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex-1 min-w-48 max-w-sm">
-          <Input placeholder="Search client, AM, executive…" value={search} onChange={(e)=>setSearch(e.target.value)} leftIcon={<Search className="w-3.5 h-3.5"/>}/>
+          <Input placeholder="Search client, AM, executive…" value={search} onChange={(e) => setSearch(e.target.value)} leftIcon={<Search className="w-3.5 h-3.5"/>}/>
         </div>
-        <div className="flex gap-1 flex-wrap">
-          {SALESPERSONS.map((sp)=>(
-            <button key={sp} onClick={()=>setExecFilter(sp)} className={cn(
-              "px-2.5 py-1 rounded-lg text-xs font-medium transition-all border",
-              execFilter===sp?"bg-accent-light text-accent border-accent-border":"text-slate-500 hover:text-slate-700 hover:bg-slate-50 border-transparent"
-            )}>{sp}</button>
-          ))}
-        </div>
+
+        {/* Exec filter buttons — hidden when locked to a specific salesperson */}
+        {!salespersonFilter && (
+          <div className="flex gap-1 flex-wrap">
+            {SALESPERSONS.map((sp) => (
+              <button key={sp} onClick={() => setExecFilter(sp)} className={cn(
+                "px-2.5 py-1 rounded-lg text-xs font-medium transition-all border",
+                execFilter === sp ? "bg-accent-light text-accent border-accent-border" : "text-slate-500 hover:text-slate-700 hover:bg-slate-50 border-transparent"
+              )}>{sp}</button>
+            ))}
+          </div>
+        )}
+
         {/* Status filter */}
         <div className="flex gap-1">
-          {STATUS_FILTERS.map((s)=>(
-            <button key={s} onClick={()=>setStatusFilter(s)} className={cn(
+          {STATUS_FILTERS.map((s) => (
+            <button key={s} onClick={() => setStatusFilter(s)} className={cn(
               "px-2.5 py-1 rounded-lg text-xs font-medium transition-all border",
-              statusFilter===s?"bg-accent-light text-accent border-accent-border":"text-slate-500 hover:text-slate-700 hover:bg-slate-50 border-transparent"
+              statusFilter === s ? "bg-accent-light text-accent border-accent-border" : "text-slate-500 hover:text-slate-700 hover:bg-slate-50 border-transparent"
             )}>{s}</button>
           ))}
         </div>
+
         <div className="ml-auto flex items-center gap-2">
-          <Select options={SORT_OPTS} value={sortBy} onChange={(e)=>setSortBy(e.target.value)} className="w-40 h-8 text-xs"/>
+          <Select options={SORT_OPTS} value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="w-40 h-8 text-xs"/>
           <div className="flex border border-slate-200 rounded-lg overflow-hidden">
-            <button onClick={()=>setViewMode("grid")} className={cn("px-2.5 py-1.5 transition-colors",viewMode==="grid"?"bg-slate-100 text-slate-700":"text-slate-400 hover:text-slate-600")}>
+            <button onClick={() => setViewMode("grid")} className={cn("px-2.5 py-1.5 transition-colors", viewMode==="grid"?"bg-slate-100 text-slate-700":"text-slate-400 hover:text-slate-600")}>
               <LayoutGrid className="w-3.5 h-3.5"/>
             </button>
-            <button onClick={()=>setViewMode("list")} className={cn("px-2.5 py-1.5 border-l border-slate-200 transition-colors",viewMode==="list"?"bg-slate-100 text-slate-700":"text-slate-400 hover:text-slate-600")}>
+            <button onClick={() => setViewMode("list")} className={cn("px-2.5 py-1.5 border-l border-slate-200 transition-colors", viewMode==="list"?"bg-slate-100 text-slate-700":"text-slate-400 hover:text-slate-600")}>
               <List className="w-3.5 h-3.5"/>
             </button>
           </div>
@@ -99,35 +109,38 @@ export function ClientList({ onSelectClient, stoppedClients }: ClientListProps) 
       {/* Count */}
       <div className="flex items-center gap-2">
         <Users className="w-3.5 h-3.5 text-slate-400"/>
-        <span className="text-xs text-slate-400">{clients.length} client{clients.length!==1?"s":""}{execFilter!=="All"||search?" (filtered)":""}</span>
+        <span className="text-xs text-slate-400">
+          {clients.length} client{clients.length !== 1 ? "s" : ""}
+          {salespersonFilter ? ` · ${salespersonFilter}'s accounts` : (activeExecFilter || search) ? " (filtered)" : ""}
+        </span>
       </div>
 
       {/* Grid or List */}
-      {clients.length===0 ? (
+      {clients.length === 0 ? (
         <EmptyState icon={Users} title="No clients found" description="Try adjusting your search or filters."/>
-      ) : viewMode==="grid" ? (
+      ) : viewMode === "grid" ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {clients.map(([name,cs])=><ClientCard key={name} contracts={cs} onClick={()=>onSelectClient(cs)} stopped={stoppedClients?.(name)}/>)}
+          {clients.map(([name, cs]) => <ClientCard key={name} contracts={cs} onClick={() => onSelectClient(cs)} stopped={stoppedClients?.(name)}/>)}
         </div>
       ) : (
         <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-card">
           <div className="divide-y divide-slate-100">
-            {clients.map(([name,cs])=>{
+            {clients.map(([name, cs]) => {
               const primary    = cs[0];
-              const totalValue = cs.reduce((a,c)=>a+c.dealValue,0);
+              const totalValue = cs.reduce((a, c) => a + c.dealValue, 0);
               const color      = SALESPERSON_COLORS[primary.salesperson];
               return (
-                <button key={name} onClick={()=>onSelectClient(cs)} className="w-full flex items-center gap-4 px-5 py-3 hover:bg-slate-50 transition-colors text-left">
-                  <div className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold flex-shrink-0" style={{backgroundColor:color+"15",color}}>
+                <button key={name} onClick={() => onSelectClient(cs)} className="w-full flex items-center gap-4 px-5 py-3 hover:bg-slate-50 transition-colors text-left">
+                  <div className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold flex-shrink-0" style={{backgroundColor:color+"15", color}}>
                     {name.charAt(0)}
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-slate-700 truncate">{name}</p>
                     <p className="text-xs text-slate-400">{primary.salesperson} · {primary.accountManager}</p>
-                  {stoppedClients?.(name) && <span className="text-[10px] text-accent-red bg-accent-redLight border border-red-200 px-1 py-0.5 rounded">Stopped</span>}
+                    {stoppedClients?.(name) && <span className="text-[10px] text-accent-red bg-accent-redLight border border-red-200 px-1 py-0.5 rounded">Stopped</span>}
                   </div>
                   <div className="flex items-center gap-4 flex-shrink-0">
-                    <span className="text-xs text-slate-400 hidden sm:block">{cs.length} service{cs.length>1?"s":""}</span>
+                    <span className="text-xs text-slate-400 hidden sm:block">{cs.length} service{cs.length > 1 ? "s" : ""}</span>
                     <span className="text-sm font-semibold text-slate-600">{formatCurrency(totalValue)}</span>
                   </div>
                 </button>

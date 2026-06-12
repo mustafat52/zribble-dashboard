@@ -14,6 +14,7 @@ const PAGE_TITLES: Record<string, { title: string; subtitle: string }> = {
   "/salesperson": { title: "Salesperson View",  subtitle: "Per-executive portfolio breakdown"           },
   "/new-entry":   { title: "New Entry",         subtitle: "Add a new client contract"                  },
   "/settings":    { title: "Settings",          subtitle: "Users and application preferences"           },
+  "/insights":    { title: "Insights",           subtitle: "Filter and analyse the full portfolio"        },
 };
 
 const ROLE_BADGE: Record<string, { label: string; cls: string }> = {

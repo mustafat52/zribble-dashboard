@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/utils";
 import { ChevronDown, ChevronRight, AlertTriangle, Clock } from "lucide-react";
 import { ClientLink } from "@/components/clients/ClientLink";
+import { useAuth } from "@/lib/auth-context";
 
 interface OutstandingItem {
   contractId: string; clientName: string; salesperson: string;
@@ -16,31 +17,35 @@ interface OutstandingItem {
 }
 
 export function OutstandingLedger({ onMarkPayment }: { onMarkPayment: (id: string, y: number, m: number) => void }) {
+  const { user, canPerform } = useAuth();
+  const execFilter = canPerform("view_all") ? null : user?.salesperson ?? null;
+  const contracts  = execFilter ? CONTRACTS.filter((c) => c.salesperson === execFilter) : CONTRACTS;
+
   const [collapsed, setCollapsed] = useState<Record<string,boolean>>({});
 
-  const items: OutstandingItem[] = useMemo(()=>
-    CONTRACTS.flatMap((c)=>
+  const items: OutstandingItem[] = useMemo(() =>
+    contracts.flatMap((c) =>
       c.renewalSchedule
-        .filter((r)=>r.status==="pending"||r.status==="partial"||r.status==="overdue")
-        .map((r)=>({
+        .filter((r) => r.status==="pending"||r.status==="partial"||r.status==="overdue")
+        .map((r) => ({
           contractId: c.id, clientName: c.clientName, salesperson: c.salesperson,
           accountManager: c.accountManager, product: c.product,
           year: r.year, month: r.month, expected: r.amount,
           outstanding: r.status==="partial" ? r.amount-r.payments.reduce((a,p)=>a+p.amount,0) : r.amount,
           status: r.status as "pending"|"partial"|"overdue",
         }))
-    ), []);
+    ), [contracts]);
 
-  const grouped = useMemo(()=>{
+  const grouped = useMemo(() => {
     const map: Record<string,OutstandingItem[]> = {};
-    items.forEach((item)=>{ if(!map[item.salesperson]) map[item.salesperson]=[]; map[item.salesperson].push(item); });
-    return Object.entries(map).sort((a,b)=>b[1].length-a[1].length);
+    items.forEach((item) => { if(!map[item.salesperson]) map[item.salesperson]=[]; map[item.salesperson].push(item); });
+    return Object.entries(map).sort((a,b) => b[1].length-a[1].length);
   }, [items]);
 
-  const totalOutstanding    = items.reduce((a,i)=>a+i.outstanding,0);
-  const overdueItems        = items.filter((i)=>i.status==="overdue");
-  const distinctClients     = new Set(items.map((i)=>i.clientName)).size;
-  const overdueClients      = new Set(overdueItems.map((i)=>i.clientName)).size;
+  const totalOutstanding = items.reduce((a,i)=>a+i.outstanding,0);
+  const overdueItems     = items.filter((i)=>i.status==="overdue");
+  const distinctClients  = new Set(items.map((i)=>i.clientName)).size;
+  const overdueClients   = new Set(overdueItems.map((i)=>i.clientName)).size;
 
   return (
     <div className="flex flex-col gap-4">
@@ -81,7 +86,7 @@ export function OutstandingLedger({ onMarkPayment }: { onMarkPayment: (id: strin
               )}
               <span className="text-xs text-slate-400 mr-1">{execItems.length} items</span>
               <span className="text-sm font-bold text-accent-amber mr-2">{formatCurrency(execTotal)}</span>
-              {isCollapsed ? <ChevronRight className="w-3.5 h-3.5 text-slate-400"/> : <ChevronDown className="w-3.5 h-3.5 text-slate-400"/>}
+              {isCollapsed?<ChevronRight className="w-3.5 h-3.5 text-slate-400"/>:<ChevronDown className="w-3.5 h-3.5 text-slate-400"/>}
             </button>
             {!isCollapsed&&(
               <div className="border-t border-slate-100 divide-y divide-slate-100">
@@ -90,7 +95,7 @@ export function OutstandingLedger({ onMarkPayment }: { onMarkPayment: (id: strin
                     className="flex items-center gap-3 px-5 py-3 hover:bg-slate-50 transition-colors">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <ClientLink clientName={item.clientName} salesperson={item.salesperson} />
+                        <ClientLink clientName={item.clientName} salesperson={item.salesperson}/>
                         <StatusBadge status={item.status} size="sm"/>
                       </div>
                       <div className="flex items-center gap-2 mt-0.5">
@@ -108,7 +113,7 @@ export function OutstandingLedger({ onMarkPayment }: { onMarkPayment: (id: strin
                       </div>
                       <div className="text-right">
                         <p className="text-[10px] text-slate-400">Outstanding</p>
-                        <p className={cn("text-sm font-bold", item.status==="overdue"?"text-accent-red":"text-accent-amber")}>{formatCurrency(item.outstanding)}</p>
+                        <p className={cn("text-sm font-bold",item.status==="overdue"?"text-accent-red":"text-accent-amber")}>{formatCurrency(item.outstanding)}</p>
                       </div>
                       <Button size="sm" variant={item.status==="overdue"?"danger":"secondary"} onClick={()=>onMarkPayment(item.contractId,item.year,item.month)}>Pay</Button>
                     </div>

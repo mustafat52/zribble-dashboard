@@ -1,5 +1,5 @@
 "use client";
-import { UPCOMING_RENEWALS } from "@/lib/mock-data";
+import { UPCOMING_RENEWALS, CONTRACTS } from "@/lib/mock-data";
 import { formatCurrency, SALESPERSON_COLORS } from "@/lib/utils";
 import { Card, CardHeader, CardTitle, CardFooter } from "@/components/ui/Card";
 import { StatusBadge } from "@/components/ui/Badge";
@@ -8,9 +8,16 @@ import { EmptyState } from "@/components/ui/Misc";
 import { CalendarDays, ArrowRight } from "lucide-react";
 import { ClientLink } from "@/components/clients/ClientLink";
 import Link from "next/link";
+import { useAuth } from "@/lib/auth-context";
 
 export function UpcomingRenewals() {
-  const items = UPCOMING_RENEWALS.slice(0, 8);
+  const { user, canPerform } = useAuth();
+  const execFilter = canPerform("view_all") ? null : user?.salesperson ?? null;
+  const items = (execFilter
+    ? UPCOMING_RENEWALS.filter((r) => r.salesperson === execFilter)
+    : UPCOMING_RENEWALS
+  ).slice(0, 8);
+
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
@@ -19,7 +26,7 @@ export function UpcomingRenewals() {
           <p className="text-xs text-slate-400 mt-0.5">Due in July 2026</p>
         </div>
         <span className="text-xs font-semibold text-accent bg-accent-light px-2 py-0.5 rounded-full border border-accent-border">
-          {UPCOMING_RENEWALS.length} total
+          {items.length} total
         </span>
       </CardHeader>
       <div className="divide-y divide-slate-100">

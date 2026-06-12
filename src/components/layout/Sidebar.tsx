@@ -5,7 +5,7 @@ import { cn, SALESPERSON_COLORS } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
 import {
   LayoutDashboard, CalendarDays, CreditCard, Users, UserCircle,
-  PlusCircle, TrendingUp, ChevronRight, Bell, Settings, LogOut,
+  PlusCircle, TrendingUp, ChevronRight, Bell, Settings, LogOut, BarChart2,
 } from "lucide-react";
 
 const NAV_ITEMS = [
@@ -83,6 +83,26 @@ export function Sidebar() {
             </ul>
           </div>
         ))}
+
+        {/* Insights — super_admin and accounts_team only */}
+        {canPerform("view_all") && (
+          <div>
+            <ul className="space-y-0.5">
+              <li>
+                <Link href="/insights" className={cn(
+                  "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-150 group",
+                  pathname === "/insights"
+                    ? "bg-accent-light text-accent border border-accent-border"
+                    : "text-slate-600 hover:text-slate-800 hover:bg-slate-50"
+                )}>
+                  <BarChart2 className={cn("w-4 h-4 flex-shrink-0", pathname === "/insights" ? "text-accent" : "text-slate-400 group-hover:text-slate-600")} />
+                  Insights
+                  {pathname === "/insights" && <ChevronRight className="w-3 h-3 ml-auto text-accent/50" />}
+                </Link>
+              </li>
+            </ul>
+          </div>
+        )}
 
         {/* Settings — super_admin only */}
         {canPerform("view_settings") && (

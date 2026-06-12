@@ -106,12 +106,13 @@ interface RenewalCalendarProps {
   year: number;
   month: number;
   promises: PaymentPromise[];
+  salesperson?: string;
 }
 
-export function RenewalCalendar({ year, month, promises }: RenewalCalendarProps) {
+export function RenewalCalendar({ year, month, promises, salesperson }: RenewalCalendarProps) {
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
 
-  const renewals = getRenewalsForMonth(year, month);
+  const renewals = getRenewalsForMonth(year, month, salesperson);
 
   // Group renewals by day
   const renewalsByDay = useMemo(() => {
