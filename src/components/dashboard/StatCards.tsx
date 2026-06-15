@@ -2,7 +2,7 @@
 import { cn, formatCurrency } from "@/lib/utils";
 import { DASHBOARD_STATS, CONTRACTS } from "@/lib/mock-data";
 import { TrendingUp, Users, CalendarClock, CheckCircle2, AlertTriangle, Clock, IndianRupee, ArrowUpRight, UserPlus, RefreshCw } from "lucide-react";
-import { DateRange } from "@/app/dashboard/page";
+import { DateRange } from "@/lib/range-utils";
 import { useAuth } from "@/lib/auth-context";
 
 interface StatCardsProps { range: DateRange; }

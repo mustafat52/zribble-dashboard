@@ -8,31 +8,10 @@ import {
   UpcomingRenewals,
   PipelineDonut,
 } from "@/components/dashboard";
-
-export type DateRange = {
-  fromYear: number; fromMonth: number;
-  toYear: number;   toMonth: number;
-  months: number; // how many months from Jul 2026
-};
-
-// Compute a DateRange from a month count starting Jul 2026
-export function rangeFromMonths(months: number): DateRange {
-  const FROM_YEAR = 2026; const FROM_MONTH = 7;
-  const MAX_YEAR  = 2028; const MAX_MONTH  = 12;
-  // clamp to data range
-  const clamped = Math.max(1, Math.min(months, 30));
-  let toMonth = FROM_MONTH + clamped - 1;
-  let toYear  = FROM_YEAR;
-  while (toMonth > 12) { toMonth -= 12; toYear++; }
-  // don't exceed Dec 2028
-  if (toYear > MAX_YEAR || (toYear === MAX_YEAR && toMonth > MAX_MONTH)) {
-    toYear = MAX_YEAR; toMonth = MAX_MONTH;
-  }
-  return { fromYear: FROM_YEAR, fromMonth: FROM_MONTH, toYear, toMonth, months: clamped };
-}
+import { rangeFromMonths } from "@/lib/range-utils";
 
 export default function DashboardPage() {
-  const [months, setMonths] = useState<number>(30); // default: full range
+  const [months, setMonths] = useState<number>(30);
   const range = rangeFromMonths(months);
 
   return (

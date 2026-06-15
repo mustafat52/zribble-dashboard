@@ -4,7 +4,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { MONTHLY_TOTALS } from "@/lib/mock-data";
 import { formatCurrency, getMonthShort } from "@/lib/utils";
 import { Card, CardHeader, CardTitle } from "@/components/ui/Card";
-import { DateRange } from "@/app/dashboard/page";
+import { DateRange } from "@/lib/range-utils";
 import { cn } from "@/lib/utils";
 
 interface RevenueChartProps {

@@ -3,7 +3,7 @@ import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
 import { CONTRACTS } from "@/lib/mock-data";
 import { formatCurrency, SALESPERSON_COLORS } from "@/lib/utils";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/Card";
-import { DateRange } from "@/app/dashboard/page";
+import { DateRange } from "@/lib/range-utils";
 import { Salesperson } from "@/types";
 
 interface PipelineDonutProps {
