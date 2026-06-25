@@ -1,0 +1,160 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  super_admin
+  accounts_team
+  employee
+}
+
+enum EmployeeMode {
+  view
+  view_edit
+}
+
+enum PaymentStatus {
+  pending
+  partial
+  collected
+  overdue
+  waived
+}
+
+enum GSTStatus {
+  Y
+  N
+}
+
+enum ContractStatus {
+  active
+  stopped
+}
+
+enum PaymentType {
+  onboarding
+  renewal
+}
+
+model User {
+  id           String        @id @default(cuid())
+  name         String
+  email        String        @unique
+  passwordHash String
+  role         UserRole
+  mode         EmployeeMode?
+  salesperson  String?
+  createdAt    DateTime      @default(now())
+  createdBy    String
+}
+
+model Contract {
+  id                 String         @id @default(cuid())
+  salesperson        String
+  clientName         String
+  product            String
+  accountManager     String
+  contractId         String?
+  profiles           Int
+  gstStatus          GSTStatus
+  dealValue          Float
+  contractTermMonths Int
+  firstRenewalDate   String
+  contractStatus     ContractStatus @default(active)
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  renewalMonths  RenewalMonth[]
+  payments       Payment[]
+  promises       Promise[]
+  priceOverrides PriceOverride[]
+  contractEdits  ContractEdit[]
+  onboarding     OnboardingPayment?
+}
+
+model RenewalMonth {
+  id               String        @id @default(cuid())
+  contractId       String
+  year             Int
+  month            Int
+  amount           Float
+  overriddenAmount Float?
+  status           PaymentStatus @default(pending)
+  contract         Contract      @relation(fields: [contractId], references: [id], onDelete: Cascade)
+
+  @@unique([contractId, year, month])
+}
+
+model Payment {
+  id           String      @id @default(cuid())
+  contractId   String
+  renewalYear  Int
+  renewalMonth Int
+  amount       Float
+  paidOn       String
+  notes        String?
+  recordedBy   String
+  type         PaymentType @default(renewal)
+  createdAt    DateTime    @default(now())
+  contract     Contract    @relation(fields: [contractId], references: [id], onDelete: Cascade)
+}
+
+model Promise {
+  id              String   @id @default(cuid())
+  contractId      String
+  clientName      String
+  salesperson     String
+  renewalYear     Int
+  renewalMonth    Int
+  paidAmount      Float
+  remainingAmount Float
+  promisedDate    String
+  notes           String?
+  createdAt       DateTime @default(now())
+  contract        Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+}
+
+model ClientNote {
+  id         String   @id @default(cuid())
+  clientName String
+  text       String
+  createdAt  DateTime @default(now())
+  createdBy  String
+}
+
+model OnboardingPayment {
+  id              String   @id @default(cuid())
+  contractId      String   @unique
+  clientName      String
+  salesperson     String
+  status          String
+  amountCollected Float
+  paidOn          String
+  notes           String?
+  contract        Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+}
+
+model PriceOverride {
+  id         String   @id @default(cuid())
+  contractId String
+  fromYear   Int
+  fromMonth  Int
+  newAmount  Float
+  createdAt  DateTime @default(now())
+  contract   Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+}
+
+model ContractEdit {
+  id             String   @id @default(cuid())
+  contractId     String
+  changes        Json
+  previousValues Json
+  editedAt       DateTime @default(now())
+  editedBy       String
+  contract       Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+}
