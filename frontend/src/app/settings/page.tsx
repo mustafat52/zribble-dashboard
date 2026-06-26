@@ -1,14 +1,15 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { useAuth, DEMO_USERS, AppUser, UserRole, EmployeeMode } from "@/lib/auth-context";
+import { useAuth, AppUser, UserRole, EmployeeMode } from "@/lib/auth-context";
 import { PageWrapper } from "@/components/layout/PageWrapper";
-import { formatCurrency, SALESPERSON_COLORS } from "@/lib/utils";
+import { SALESPERSON_COLORS } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import {
-  Shield, Users, UserPlus, Pencil, Eye, EyeOff,
-  CheckCircle2, LogOut, Settings as SettingsIcon,
+  Shield, Users, CheckCircle2, LogOut, Settings as SettingsIcon,
 } from "lucide-react";
+
+const API = process.env.NEXT_PUBLIC_API_URL;
 
 const ROLE_LABELS: Record<UserRole, string> = {
   super_admin:   "Super Admin",
@@ -22,11 +23,20 @@ const ROLE_COLORS: Record<UserRole, string> = {
   employee:      "bg-slate-100 text-slate-600 border-slate-200",
 };
 
-const SALESPEOPLE = ["Aftab","Sarvesh","Firoz","Idris","Prajay","Vinay"];
-
 export default function SettingsPage() {
   const { user, canPerform, logout } = useAuth();
   const router = useRouter();
+  const [users, setUsers] = useState<AppUser[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!canPerform("view_settings")) return;
+    fetch(`${API}/users`, { credentials: "include" })
+      .then((r) => r.ok ? r.json() : [])
+      .then((data) => setUsers(Array.isArray(data) ? data : []))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
 
   if (!canPerform("view_settings")) {
     return (
@@ -51,7 +61,8 @@ export default function SettingsPage() {
             </h2>
             <p className="text-xs text-slate-400 mt-0.5">Manage users and application preferences</p>
           </div>
-          <button onClick={() => { logout(); router.replace("/login"); }}
+          <button
+            onClick={() => { logout(); router.replace("/login"); }}
             className="flex items-center gap-2 px-4 py-2 rounded-xl border border-red-200 text-accent-red bg-accent-redLight text-sm font-medium hover:bg-red-100 transition-all">
             <LogOut className="w-4 h-4" /> Sign Out
           </button>
@@ -80,15 +91,22 @@ export default function SettingsPage() {
             <div className="flex items-center gap-2">
               <Users className="w-4 h-4 text-slate-500" />
               <p className="text-sm font-semibold text-slate-700">Team Members</p>
-              <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded-full bg-accent-light text-accent border border-accent-border">{DEMO_USERS.length}</span>
+              {!loading && (
+                <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded-full bg-accent-light text-accent border border-accent-border">
+                  {users.length}
+                </span>
+              )}
             </div>
           </div>
 
           <div className="divide-y divide-slate-100">
-            {DEMO_USERS.map((u) => (
+            {loading ? (
+              <div className="px-5 py-8 text-center text-sm text-slate-400">Loading users...</div>
+            ) : users.map((u) => (
               <div key={u.id} className="flex items-center gap-4 px-5 py-3.5">
-                <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold flex-shrink-0",
-                  u.role === "super_admin" ? "bg-accent-light text-accent" :
+                <div className={cn(
+                  "w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold flex-shrink-0",
+                  u.role === "super_admin"   ? "bg-accent-light text-accent" :
                   u.role === "accounts_team" ? "bg-cyan-50 text-accent-cyan" :
                   "bg-slate-100 text-slate-500")}>
                   {u.name[0]}
@@ -97,15 +115,19 @@ export default function SettingsPage() {
                   <div className="flex items-center gap-2">
                     <p className="text-sm font-medium text-slate-700">{u.name}</p>
                     {u.salesperson && (
-                      <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: SALESPERSON_COLORS[u.salesperson] }} />
+                      <span className="w-2 h-2 rounded-full flex-shrink-0"
+                        style={{ backgroundColor: SALESPERSON_COLORS[u.salesperson] }} />
                     )}
                   </div>
                   <p className="text-xs text-slate-400 truncate">{u.email}</p>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
                   {u.mode && (
-                    <span className={cn("text-[10px] font-semibold px-2 py-0.5 rounded-full border",
-                      u.mode === "view_edit" ? "bg-accent-greenLight text-accent-green border-emerald-200" : "bg-slate-100 text-slate-500 border-slate-200")}>
+                    <span className={cn(
+                      "text-[10px] font-semibold px-2 py-0.5 rounded-full border",
+                      u.mode === "view_edit"
+                        ? "bg-accent-greenLight text-accent-green border-emerald-200"
+                        : "bg-slate-100 text-slate-500 border-slate-200")}>
                       {u.mode === "view_edit" ? "View & Edit" : "View Only"}
                     </span>
                   )}
@@ -119,7 +141,7 @@ export default function SettingsPage() {
 
           <div className="px-5 py-3 bg-slate-50 border-t border-slate-100">
             <p className="text-[11px] text-slate-400">
-              User creation and password management will be available when the backend is connected.
+              User management connected to live backend.
             </p>
           </div>
         </div>
@@ -127,7 +149,9 @@ export default function SettingsPage() {
         {/* Permissions reference */}
         <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-card">
           <div className="px-5 py-4 border-b border-slate-100">
-            <p className="text-sm font-semibold text-slate-700 flex items-center gap-2"><Shield className="w-4 h-4 text-slate-400"/> Permission Matrix</p>
+            <p className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+              <Shield className="w-4 h-4 text-slate-400" /> Permission Matrix
+            </p>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
@@ -142,13 +166,13 @@ export default function SettingsPage() {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {[
-                  ["See all data",     true,  true,  false, false],
-                  ["Record payment",   true,  false, false, true ],
-                  ["Add new client",   true,  false, false, true ],
-                  ["Edit client",      true,  false, false, true ],
-                  ["Stop client",      true,  false, false, true ],
-                  ["Export Excel",     true,  false, false, false],
-                  ["Settings",         true,  false, false, false],
+                  ["See all data",   true,  true,  false, false],
+                  ["Record payment", true,  false, false, true ],
+                  ["Add new client", true,  false, false, true ],
+                  ["Edit client",    true,  false, false, true ],
+                  ["Stop client",    true,  false, false, true ],
+                  ["Export Excel",   true,  false, false, false],
+                  ["Settings",       true,  false, false, false],
                 ].map(([label, ...vals]) => (
                   <tr key={label as string} className="hover:bg-slate-50/50">
                     <td className="px-5 py-2.5 font-medium text-slate-600">{label as string}</td>
