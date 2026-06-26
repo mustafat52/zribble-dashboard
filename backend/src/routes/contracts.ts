@@ -158,8 +158,8 @@ router.patch("/:id", canWrite, async (req: Request, res: Response) => {
       prisma.contractEdit.create({
         data: {
           contractId: req.params.id,
-          changes,
-          previousValues,
+          changes: changes as any,
+          previousValues: previousValues as any,
           editedBy: user.userId,
         },
       }),
