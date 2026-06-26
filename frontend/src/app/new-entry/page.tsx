@@ -7,13 +7,14 @@ import { Button } from "@/components/ui/Button";
 import { StatusBadge } from "@/components/ui/Badge";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/Card";
 import { formatCurrency, getMonthShort, SALESPERSON_COLORS } from "@/lib/utils";
-import { NewContractForm, GSTStatus, OnboardingPayment } from "@/types";
+import { NewContractForm, GSTStatus } from "@/types";
 import { useClient } from "@/lib/client-context";
+import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
 import {
   User, Package, FileText, IndianRupee, CalendarDays,
   CheckCircle2, ChevronRight, AlertCircle, Sparkles,
-  RefreshCw, ShieldCheck,
+  RefreshCw, ShieldCheck, Clock,
 } from "lucide-react";
 
 // ─── Options ─────────────────────────────────────────────────────────────────
@@ -72,10 +73,10 @@ const GST_OPTS = [
 
 // ─── Steps ───────────────────────────────────────────────────────────────────
 const STEPS = [
-  { id: 1, label: "Client Info",    icon: User        },
-  { id: 2, label: "Contract",       icon: Package     },
-  { id: 3, label: "Financials",     icon: IndianRupee },
-  { id: 4, label: "Review",         icon: CheckCircle2},
+  { id: 1, label: "Client Info",    icon: User         },
+  { id: 2, label: "Contract",       icon: Package      },
+  { id: 3, label: "Financials",     icon: IndianRupee  },
+  { id: 4, label: "Review",         icon: CheckCircle2 },
 ];
 
 // ─── Renewal preview calculator ───────────────────────────────────────────────
@@ -87,17 +88,11 @@ function calcRenewalSchedule(
   if (!firstRenewalDate || !dealValue || !termMonths) return [];
   const start = new Date(firstRenewalDate);
   if (isNaN(start.getTime())) return [];
-
   const schedule: { year: number; month: number; amount: number }[] = [];
   const endDate = new Date("2028-12-31");
   let current = new Date(start);
-
   while (current <= endDate) {
-    schedule.push({
-      year: current.getFullYear(),
-      month: current.getMonth() + 1,
-      amount: dealValue,
-    });
+    schedule.push({ year: current.getFullYear(), month: current.getMonth() + 1, amount: dealValue });
     current.setMonth(current.getMonth() + termMonths);
   }
   return schedule;
@@ -117,9 +112,6 @@ const DEFAULT_FORM: NewContractForm = {
   firstRenewalDate:   "",
 };
 
-// Separate notes state (not part of contract form, stored in ClientContext)
-
-
 // ─── Validation ───────────────────────────────────────────────────────────────
 function validate(form: NewContractForm, step: number): Record<string, string> {
   const errors: Record<string, string> = {};
@@ -129,9 +121,9 @@ function validate(form: NewContractForm, step: number): Record<string, string> {
     if (!form.accountManager)    errors.accountManager = "Select an account manager";
   }
   if (step >= 2) {
-    if (!form.product)                                    errors.product = "Select a product";
-    if (!form.profiles || form.profiles < 1)              errors.profiles = "Minimum 1 profile";
-    if (!form.contractTermMonths || form.contractTermMonths < 1) errors.contractTermMonths = "Select contract term";
+    if (!form.product)                                               errors.product = "Select a product";
+    if (!form.profiles || form.profiles < 1)                         errors.profiles = "Minimum 1 profile";
+    if (!form.contractTermMonths || form.contractTermMonths < 1)     errors.contractTermMonths = "Select contract term";
   }
   if (step >= 3) {
     if (!form.dealValue || form.dealValue <= 0) errors.dealValue = "Enter a valid deal value";
@@ -142,27 +134,40 @@ function validate(form: NewContractForm, step: number): Record<string, string> {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 export default function NewEntryPage() {
-  const [step,      setStep]      = useState(1);
-  const [form,      setForm]      = useState<NewContractForm>(DEFAULT_FORM);
-  const [errors,    setErrors]    = useState<Record<string, string>>({});
+  const { user } = useAuth();
+  const [step,         setStep]         = useState(1);
+  const [form,         setForm]         = useState<NewContractForm>(DEFAULT_FORM);
+  const [errors,       setErrors]       = useState<Record<string, string>>({});
   const [submitted,    setSubmitted]    = useState(false);
   const [loading,      setLoading]      = useState(false);
   const [isCustomTerm, setIsCustomTerm] = useState(false);
   const [customTerm,   setCustomTerm]   = useState("");
-  const [initialNote,       setInitialNote]       = useState("");
+
+  // Step 1
+  const [initialNote, setInitialNote] = useState("");
+
+  // Step 3 — onboarding payment
   const [onboardingStatus,  setOnboardingStatus]  = useState<"collected"|"partial"|"not_collected">("collected");
   const [onboardingAmount,  setOnboardingAmount]  = useState("");
   const [onboardingDate,    setOnboardingDate]    = useState(new Date().toISOString().split("T")[0]);
   const [onboardingNotes,   setOnboardingNotes]   = useState("");
 
-  const { addOnboardingPayment, addNote: addClientNote } = useClient();
+  // Step 3 — promise for remaining (only when partial)
+  const [promiseDate,  setPromiseDate]  = useState("");
+  const [promiseNotes, setPromiseNotes] = useState("");
+
+  const { addOnboardingPayment, addNote: addClientNote, addPromise } = useClient();
 
   const renewalPreview = useMemo(
     () => calcRenewalSchedule(form.firstRenewalDate, form.dealValue, form.contractTermMonths),
     [form.firstRenewalDate, form.dealValue, form.contractTermMonths]
   );
-
   const totalPipeline = renewalPreview.reduce((a, r) => a + r.amount, 0);
+
+  // Derived onboarding values
+  const paidAmount      = Number(onboardingAmount) || 0;
+  const remainingAmount = form.dealValue > 0 ? Math.max(form.dealValue - paidAmount, 0) : 0;
+  const isPartial       = onboardingStatus === "partial" && paidAmount > 0 && remainingAmount > 0;
 
   function update<K extends keyof NewContractForm>(key: K, value: NewContractForm[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -175,7 +180,6 @@ export default function NewEntryPage() {
     setErrors({});
     setStep((s) => Math.min(s + 1, 4));
   }
-
   function prevStep() { setStep((s) => Math.max(s - 1, 1)); }
 
   async function handleSubmit() {
@@ -184,27 +188,46 @@ export default function NewEntryPage() {
     setLoading(true);
     await new Promise((r) => setTimeout(r, 1000));
 
-    // Save onboarding payment to context
+    const newContractId = `c-new-${Date.now()}`;
+
+    // Save onboarding payment
     if (onboardingStatus !== "not_collected" && onboardingAmount) {
       addOnboardingPayment({
-        contractId:      `c-new-${Date.now()}`,
+        contractId:      newContractId,
         clientName:      form.clientName,
         salesperson:     form.salesperson,
         status:          onboardingStatus,
-        amountCollected: Number(onboardingAmount),
+        amountCollected: paidAmount,
         paidOn:          onboardingDate,
         notes:           onboardingNotes || undefined,
       });
     }
 
-    // Save initial note if provided
+    // Save promise if partial payment and promise date given
+    if (isPartial && promiseDate) {
+      addPromise({
+        id:             `p-onboard-${Date.now()}`,
+        contractId:     newContractId,
+        clientName:     form.clientName,
+        salesperson:    form.salesperson,
+        renewalYear:    new Date(onboardingDate).getFullYear(),
+        renewalMonth:   new Date(onboardingDate).getMonth() + 1,
+        paidAmount,
+        remainingAmount,
+        promisedDate:   promiseDate,
+        notes:          promiseNotes || `Onboarding balance of ${formatCurrency(remainingAmount)}`,
+        createdAt:      new Date().toISOString(),
+      });
+    }
+
+    // Save initial note
     if (initialNote.trim()) {
       addClientNote({
-        id:          `note-${Date.now()}`,
-        clientName:  form.clientName,
-        text:        initialNote.trim(),
-        createdAt:   new Date().toISOString(),
-        createdBy:   "Management",
+        id:        `note-${Date.now()}`,
+        clientName: form.clientName,
+        text:       initialNote.trim(),
+        createdAt:  new Date().toISOString(),
+        createdBy:  user?.name ?? "Management",
       });
     }
 
@@ -217,6 +240,13 @@ export default function NewEntryPage() {
     setStep(1);
     setErrors({});
     setSubmitted(false);
+    setInitialNote("");
+    setOnboardingStatus("collected");
+    setOnboardingAmount("");
+    setOnboardingDate(new Date().toISOString().split("T")[0]);
+    setOnboardingNotes("");
+    setPromiseDate("");
+    setPromiseNotes("");
   }
 
   const color = SALESPERSON_COLORS[form.salesperson] ?? "#3B82F6";
@@ -234,6 +264,12 @@ export default function NewEntryPage() {
             <span className="font-semibold text-gray-300">{form.clientName}</span> has been added
             under <span className="font-semibold text-gray-300">{form.salesperson}</span>.
           </p>
+          {isPartial && promiseDate && (
+            <p className="text-xs text-amber-400 mb-2">
+              Promise of {formatCurrency(remainingAmount)} recorded for{" "}
+              {new Date(promiseDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+            </p>
+          )}
           <p className="text-xs text-gray-600 mb-8">
             {renewalPreview.length} renewal months · {formatCurrency(totalPipeline)} total pipeline
           </p>
@@ -264,20 +300,18 @@ export default function NewEntryPage() {
         {/* Step indicator */}
         <div className="flex items-center gap-0 mb-8">
           {STEPS.map((s, i) => {
-            const done    = step > s.id;
-            const active  = step === s.id;
-            const Icon    = s.icon;
+            const done   = step > s.id;
+            const active = step === s.id;
+            const Icon   = s.icon;
             return (
               <div key={s.id} className="flex items-center flex-1 last:flex-none">
                 <div className="flex flex-col items-center gap-1.5">
-                  <div
-                    className={cn(
-                      "w-9 h-9 rounded-full flex items-center justify-center border-2 transition-all duration-300",
-                      done   ? "bg-accent-green border-accent-green"     :
-                      active ? "border-accent-blue bg-accent-blue/10"    :
-                               "border-surface-border bg-surface-elevated"
-                    )}
-                  >
+                  <div className={cn(
+                    "w-9 h-9 rounded-full flex items-center justify-center border-2 transition-all duration-300",
+                    done   ? "bg-accent-green border-accent-green"  :
+                    active ? "border-accent-blue bg-accent-blue/10" :
+                             "border-surface-border bg-surface-elevated"
+                  )}>
                     {done
                       ? <CheckCircle2 className="w-4 h-4 text-white" />
                       : <Icon className={cn("w-4 h-4", active ? "text-accent-blue" : "text-gray-600")} />
@@ -306,9 +340,7 @@ export default function NewEntryPage() {
           <div className="xl:col-span-2">
             <Card>
               <CardHeader>
-                <CardTitle>
-                  Step {step} — {STEPS[step - 1].label}
-                </CardTitle>
+                <CardTitle>Step {step} — {STEPS[step - 1].label}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-5">
 
@@ -344,8 +376,6 @@ export default function NewEntryPage() {
                       onChange={(e) => update("contractId", e.target.value)}
                       leftIcon={<FileText className="w-3.5 h-3.5" />}
                     />
-
-                    {/* Initial note */}
                     <div className="flex flex-col gap-1.5">
                       <label className="text-xs font-medium text-slate-600 uppercase tracking-wide">
                         Notes (optional)
@@ -399,24 +429,20 @@ export default function NewEntryPage() {
                         />
                         {isCustomTerm && (
                           <div className="flex flex-col gap-1.5">
-                            <div className="relative">
-                              <input
-                                type="number"
-                                min={1}
-                                max={36}
-                                placeholder="Enter months (1–36)"
-                                value={customTerm}
-                                onChange={(e) => {
-                                  const val = e.target.value;
-                                  setCustomTerm(val);
-                                  const n = parseInt(val);
-                                  if (!isNaN(n) && n >= 1 && n <= 36) {
-                                    update("contractTermMonths", n);
-                                  }
-                                }}
-                                className="w-full px-3 py-2 h-9 text-sm bg-white border border-accent rounded-lg focus:outline-none focus:ring-2 focus:ring-accent/20 text-slate-700 placeholder:text-slate-400"
-                              />
-                            </div>
+                            <input
+                              type="number"
+                              min={1}
+                              max={36}
+                              placeholder="Enter months (1–36)"
+                              value={customTerm}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setCustomTerm(val);
+                                const n = parseInt(val);
+                                if (!isNaN(n) && n >= 1 && n <= 36) update("contractTermMonths", n);
+                              }}
+                              className="w-full px-3 py-2 h-9 text-sm bg-white border border-accent rounded-lg focus:outline-none focus:ring-2 focus:ring-accent/20 text-slate-700 placeholder:text-slate-400"
+                            />
                             {customTerm && (parseInt(customTerm) < 1 || parseInt(customTerm) > 36) && (
                               <p className="text-xs text-accent-red">Must be between 1 and 36 months</p>
                             )}
@@ -470,7 +496,7 @@ export default function NewEntryPage() {
                       hint="Renewal schedule is auto-calculated from this date"
                     />
 
-                    {/* Live preview */}
+                    {/* Live schedule preview */}
                     {renewalPreview.length > 0 && (
                       <div className="mt-2 p-4 rounded-xl border border-surface-border bg-surface-elevated space-y-3">
                         <div className="flex items-center gap-2">
@@ -491,13 +517,9 @@ export default function NewEntryPage() {
                             <p className="font-semibold text-accent-green mt-0.5">{formatCurrency(totalPipeline)}</p>
                           </div>
                         </div>
-                        {/* Mini timeline dots */}
                         <div className="flex flex-wrap gap-1.5 mt-1">
                           {renewalPreview.slice(0, 12).map((r, i) => (
-                            <div
-                              key={i}
-                              className="px-2 py-0.5 rounded text-[10px] bg-navy-800 text-gray-500 border border-surface-border"
-                            >
+                            <div key={i} className="px-2 py-0.5 rounded text-[10px] bg-navy-800 text-gray-500 border border-surface-border">
                               {getMonthShort(r.month)} {String(r.year).slice(2)}
                             </div>
                           ))}
@@ -509,13 +531,134 @@ export default function NewEntryPage() {
                         </div>
                       </div>
                     )}
+
+                    {/* ── Onboarding Payment Section ── */}
+                    <div className="border border-slate-200 rounded-xl p-4 space-y-4 bg-slate-50">
+                      <p className="text-xs font-semibold text-slate-700 uppercase tracking-wide">
+                        Signing / Onboarding Payment
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        Record the payment collected at the time of signing. A new client entry is only created when at least some amount is received.
+                      </p>
+
+                      {/* Status selector */}
+                      <div className="flex gap-2">
+                        {(["collected","partial","not_collected"] as const).map((s) => (
+                          <button
+                            key={s}
+                            onClick={() => setOnboardingStatus(s)}
+                            className={cn(
+                              "flex-1 py-2 rounded-lg text-xs font-medium border transition-all",
+                              onboardingStatus === s
+                                ? s === "collected"     ? "bg-accent-green text-white border-accent-green"
+                                : s === "partial"       ? "bg-accent-amber text-white border-accent-amber"
+                                :                         "bg-accent-red text-white border-accent-red"
+                                : "bg-white text-slate-500 border-slate-200 hover:border-slate-300"
+                            )}
+                          >
+                            {s === "collected" ? "✓ Fully Collected" : s === "partial" ? "⚡ Partial" : "✗ Not Collected"}
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Amount + date fields — show for collected and partial */}
+                      {onboardingStatus !== "not_collected" && (
+                        <>
+                          <Input
+                            label={onboardingStatus === "partial" ? "Amount Received (₹) *" : "Amount Collected (₹) *"}
+                            type="number"
+                            min={1}
+                            placeholder={form.dealValue > 0 ? `Deal value: ${formatCurrency(form.dealValue)}` : "Enter amount"}
+                            value={onboardingAmount}
+                            onChange={(e) => setOnboardingAmount(e.target.value)}
+                            leftIcon={<IndianRupee className="w-3.5 h-3.5" />}
+                          />
+                          <Input
+                            label="Date of Payment *"
+                            type="date"
+                            value={onboardingDate}
+                            onChange={(e) => setOnboardingDate(e.target.value)}
+                          />
+                          <Input
+                            label="Notes (optional)"
+                            placeholder="e.g. Cash received, NEFT ref #12345"
+                            value={onboardingNotes}
+                            onChange={(e) => setOnboardingNotes(e.target.value)}
+                            leftIcon={<FileText className="w-3.5 h-3.5" />}
+                          />
+                        </>
+                      )}
+
+                      {/* Live status preview */}
+                      {onboardingStatus !== "not_collected" && paidAmount > 0 && (
+                        <div className={cn(
+                          "flex items-center justify-between px-4 py-3 rounded-xl border",
+                          onboardingStatus === "collected" || remainingAmount === 0
+                            ? "bg-accent-greenLight border-emerald-200"
+                            : "bg-accent-amberLight border-amber-200"
+                        )}>
+                          <p className="text-xs font-medium text-slate-600">
+                            {remainingAmount === 0
+                              ? "Fully paid — will be marked as Collected"
+                              : `Partial — ${formatCurrency(remainingAmount)} still outstanding`}
+                          </p>
+                        </div>
+                      )}
+
+                      {/* ── PROMISE SECTION — shows when partial and remaining > 0 ── */}
+                      {isPartial && (
+                        <div className="border border-amber-200 bg-accent-amberLight rounded-xl p-4 space-y-4">
+                          <div className="flex items-center gap-2">
+                            <Clock className="w-4 h-4 text-accent-amber" />
+                            <p className="text-sm font-semibold text-amber-800">
+                              Promise for Remaining {formatCurrency(remainingAmount)}
+                            </p>
+                          </div>
+                          <p className="text-xs text-amber-700">
+                            When has the client promised to pay the remaining amount? This will appear on the renewal calendar on that date.
+                          </p>
+
+                          <Input
+                            label="Promised Payment Date"
+                            type="date"
+                            value={promiseDate}
+                            onChange={(e) => setPromiseDate(e.target.value)}
+                            hint="This date will show on the calendar as a payment promise"
+                          />
+
+                          <Input
+                            label="Promise Notes (optional)"
+                            placeholder="e.g. Cheque on 15th, will transfer after GST filing"
+                            value={promiseNotes}
+                            onChange={(e) => setPromiseNotes(e.target.value)}
+                            leftIcon={<FileText className="w-3.5 h-3.5" />}
+                          />
+
+                          {promiseDate ? (
+                            <div className="flex items-start gap-2 px-3 py-2.5 bg-white border border-amber-200 rounded-lg">
+                              <AlertCircle className="w-3.5 h-3.5 text-accent-amber mt-0.5 flex-shrink-0" />
+                              <p className="text-xs text-amber-700">
+                                <span className="font-semibold">{formatCurrency(remainingAmount)}</span> from{" "}
+                                <span className="font-semibold">{form.clientName || "this client"}</span> will appear on the calendar on{" "}
+                                <span className="font-semibold">
+                                  {new Date(promiseDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                                </span>
+                              </p>
+                            </div>
+                          ) : (
+                            <p className="text-xs text-amber-600 italic">
+                              ⚠ No promise date set — the remaining amount won&apos;t show on the calendar
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </>
                 )}
 
                 {/* ── Step 4: Review ── */}
                 {step === 4 && (
                   <div className="space-y-4">
-                    {/* Summary card */}
                     <div
                       className="rounded-xl border p-4 space-y-3"
                       style={{ borderColor: color + "40", backgroundColor: color + "08" }}
@@ -536,13 +679,30 @@ export default function NewEntryPage() {
                         ["First Renewal",  form.firstRenewalDate],
                         ["Renewals",       `${renewalPreview.length} months`],
                         ["Total Pipeline", formatCurrency(totalPipeline)],
-                        ["Onboarding Pmt", onboardingStatus === "not_collected" ? "Not collected" : onboardingStatus === "partial" ? `Partial — ₹${onboardingAmount} of ₹${form.dealValue}` : `Collected — ₹${onboardingAmount || form.dealValue}`],
+                        ["Onboarding Pmt",
+                          onboardingStatus === "not_collected"
+                            ? "Not collected"
+                            : onboardingStatus === "partial"
+                            ? `Partial — ${formatCurrency(paidAmount)} of ${formatCurrency(form.dealValue)}`
+                            : `Collected — ${formatCurrency(paidAmount || form.dealValue)}`
+                        ],
+                        ...(isPartial && promiseDate
+                          ? [["Promise Date", new Date(promiseDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })]]
+                          : []
+                        ),
+                        ...(isPartial && remainingAmount > 0
+                          ? [["Remaining", formatCurrency(remainingAmount)]]
+                          : []
+                        ),
                       ].map(([label, value]) => (
                         <div key={label} className="flex items-center justify-between text-xs">
                           <span className="text-gray-500">{label}</span>
                           <span className={cn(
                             "font-medium",
-                            label === "Total Pipeline" ? "text-accent-green" : "text-gray-300"
+                            label === "Total Pipeline"  ? "text-accent-green"  :
+                            label === "Remaining"       ? "text-accent-amber"  :
+                            label === "Promise Date"    ? "text-accent-amber"  :
+                            "text-gray-300"
                           )}>
                             {value}
                           </span>
@@ -550,7 +710,6 @@ export default function NewEntryPage() {
                       ))}
                     </div>
 
-                    {/* GST notice */}
                     {form.gstStatus === "Y" && (
                       <div className="flex items-start gap-2.5 px-3 py-2.5 rounded-lg bg-accent-cyan/5 border border-accent-cyan/20">
                         <ShieldCheck className="w-3.5 h-3.5 text-accent-cyan mt-0.5 flex-shrink-0" />
@@ -572,13 +731,9 @@ export default function NewEntryPage() {
                   </div>
                 )}
 
-                {/* Navigation buttons */}
+                {/* Navigation */}
                 <div className="flex items-center justify-between pt-2 border-t border-surface-border">
-                  <Button
-                    variant="ghost"
-                    onClick={prevStep}
-                    disabled={step === 1}
-                  >
+                  <Button variant="ghost" onClick={prevStep} disabled={step === 1}>
                     Back
                   </Button>
                   <div className="flex items-center gap-2">
@@ -601,22 +756,18 @@ export default function NewEntryPage() {
 
           {/* Right panel: live preview */}
           <div className="flex flex-col gap-4">
-            {/* Contract summary (live) */}
             <Card>
               <CardHeader>
                 <CardTitle>Live Preview</CardTitle>
                 <p className="text-xs text-gray-500 mt-0.5">Updates as you fill the form</p>
               </CardHeader>
               <CardContent className="space-y-3">
-                {/* Client name */}
                 <div>
                   <p className="text-[10px] text-gray-600 uppercase tracking-wide mb-1">Client</p>
                   <p className="text-sm font-semibold text-gray-200">
                     {form.clientName || <span className="text-gray-600 font-normal">Not entered</span>}
                   </p>
                 </div>
-
-                {/* Exec + AM */}
                 <div className="flex gap-4">
                   <div>
                     <p className="text-[10px] text-gray-600 uppercase tracking-wide mb-1">Exec</p>
@@ -630,16 +781,12 @@ export default function NewEntryPage() {
                     <p className="text-xs text-gray-300">{form.accountManager}</p>
                   </div>
                 </div>
-
-                {/* Product */}
                 <div>
                   <p className="text-[10px] text-gray-600 uppercase tracking-wide mb-1">Product</p>
                   <span className="text-xs px-2 py-0.5 rounded bg-surface-elevated text-gray-400 border border-surface-border">
                     {form.product}
                   </span>
                 </div>
-
-                {/* Financial */}
                 <div className="pt-2 border-t border-surface-border space-y-2">
                   <div className="flex justify-between text-xs">
                     <span className="text-gray-600">Per Renewal</span>
@@ -655,6 +802,18 @@ export default function NewEntryPage() {
                     <span className="text-gray-600">Renewals</span>
                     <span className="text-gray-400">{renewalPreview.length} months</span>
                   </div>
+                  {paidAmount > 0 && (
+                    <div className="flex justify-between text-xs">
+                      <span className="text-gray-600">Collected Now</span>
+                      <span className="font-semibold text-accent-green">{formatCurrency(paidAmount)}</span>
+                    </div>
+                  )}
+                  {isPartial && (
+                    <div className="flex justify-between text-xs">
+                      <span className="text-gray-600">Remaining</span>
+                      <span className="font-semibold text-accent-amber">{formatCurrency(remainingAmount)}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between text-xs pt-1 border-t border-surface-border">
                     <span className="text-gray-500 font-medium">Total Pipeline</span>
                     <span className="font-bold text-accent-green">
@@ -665,7 +824,6 @@ export default function NewEntryPage() {
               </CardContent>
             </Card>
 
-            {/* Renewal preview card */}
             {renewalPreview.length > 0 && (
               <Card>
                 <CardHeader>
@@ -674,13 +832,8 @@ export default function NewEntryPage() {
                 </CardHeader>
                 <CardContent className="max-h-64 overflow-y-auto space-y-1.5 pr-1">
                   {renewalPreview.map((r, i) => (
-                    <div
-                      key={i}
-                      className="flex items-center justify-between px-3 py-2 rounded-lg bg-surface-elevated border border-surface-border text-xs"
-                    >
-                      <span className="text-gray-400">
-                        {getMonthShort(r.month)} {r.year}
-                      </span>
+                    <div key={i} className="flex items-center justify-between px-3 py-2 rounded-lg bg-surface-elevated border border-surface-border text-xs">
+                      <span className="text-gray-400">{getMonthShort(r.month)} {r.year}</span>
                       <StatusBadge status="pending" size="sm" />
                       <span className="font-semibold text-gray-300">{formatCurrency(r.amount)}</span>
                     </div>
