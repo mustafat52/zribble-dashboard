@@ -1,6 +1,7 @@
 "use client";
+import { useMemo } from "react";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
-import { CONTRACTS } from "@/lib/mock-data";
+import { useContracts } from "@/lib/api";
 import { formatCurrency, SALESPERSON_COLORS } from "@/lib/utils";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/Card";
 import { DateRange } from "@/lib/range-utils";
@@ -28,58 +29,70 @@ function inRange(year: number, month: number, range: DateRange) {
 }
 
 export function PipelineDonut({ range }: PipelineDonutProps) {
-  // Re-compute pipeline per salesperson for the selected range
-  const totals: Record<string, number> = {};
-  CONTRACTS.forEach((c) => {
-    c.renewalSchedule.forEach((r) => {
-      if (inRange(r.year, r.month, range)) {
-        totals[c.salesperson] = (totals[c.salesperson] ?? 0) + r.amount;
-      }
+  const { data: contracts = [], isLoading } = useContracts();
+
+  const { data, total } = useMemo(() => {
+    const totals: Record<string, number> = {};
+    contracts.forEach((c) => {
+      (c.renewalSchedule ?? []).forEach((r) => {
+        if (inRange(r.year, r.month, range)) {
+          totals[c.salesperson] = (totals[c.salesperson] ?? 0) + r.amount;
+        }
+      });
     });
-  });
-
-  const data = Object.entries(totals)
-    .map(([name, value]) => ({ name, value }))
-    .sort((a, b) => b.value - a.value);
-
-  const total = data.reduce((a, d) => a + d.value, 0);
+    const data = Object.entries(totals)
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value);
+    const total = data.reduce((a, d) => a + d.value, 0);
+    return { data, total };
+  }, [contracts, range]);
 
   return (
     <Card>
       <CardHeader>
         <CardTitle>Pipeline Share</CardTitle>
-        <p className="text-xs text-slate-400 mt-0.5">{formatCurrency(total)} · {range.months}m pipeline</p>
+        <p className="text-xs text-slate-400 mt-0.5">
+          {isLoading ? "Loading..." : `${formatCurrency(total)} · ${range.months}m pipeline`}
+        </p>
       </CardHeader>
       <CardContent>
-        <div className="h-44 relative">
-          <ResponsiveContainer width="100%" height="100%">
-            <PieChart>
-              <Pie data={data} cx="50%" cy="50%" innerRadius={52} outerRadius={72} paddingAngle={3} dataKey="value" strokeWidth={0}>
-                {data.map((entry) => (
-                  <Cell key={entry.name} fill={SALESPERSON_COLORS[entry.name as Salesperson] ?? "#94A3B8"} />
-                ))}
-              </Pie>
-              <Tooltip content={<CustomTooltip />} />
-            </PieChart>
-          </ResponsiveContainer>
-          <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-            <p className="text-xs text-slate-400">Total</p>
-            <p className="text-sm font-bold text-slate-700">{formatCurrency(total)}</p>
+        {isLoading ? (
+          <div className="h-44 flex items-center justify-center">
+            <div className="text-sm text-slate-400 animate-pulse">Loading...</div>
           </div>
-        </div>
-        <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 mt-2">
-          {data.map((d) => {
-            const pct = Math.round((d.value / total) * 100);
-            return (
-              <div key={d.name} className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full flex-shrink-0"
-                  style={{ backgroundColor: SALESPERSON_COLORS[d.name as Salesperson] ?? "#94A3B8" }} />
-                <span className="text-xs text-slate-500 flex-1">{d.name}</span>
-                <span className="text-xs text-slate-400">{pct}%</span>
+        ) : (
+          <>
+            <div className="h-44 relative">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={data} cx="50%" cy="50%" innerRadius={52} outerRadius={72} paddingAngle={3} dataKey="value" strokeWidth={0}>
+                    {data.map((entry) => (
+                      <Cell key={entry.name} fill={SALESPERSON_COLORS[entry.name as Salesperson] ?? "#94A3B8"} />
+                    ))}
+                  </Pie>
+                  <Tooltip content={<CustomTooltip />} />
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                <p className="text-xs text-slate-400">Total</p>
+                <p className="text-sm font-bold text-slate-700">{formatCurrency(total)}</p>
               </div>
-            );
-          })}
-        </div>
+            </div>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 mt-2">
+              {data.map((d) => {
+                const pct = total > 0 ? Math.round((d.value / total) * 100) : 0;
+                return (
+                  <div key={d.name} className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full flex-shrink-0"
+                      style={{ backgroundColor: SALESPERSON_COLORS[d.name as Salesperson] ?? "#94A3B8" }} />
+                    <span className="text-xs text-slate-500 flex-1">{d.name}</span>
+                    <span className="text-xs text-slate-400">{pct}%</span>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
       </CardContent>
     </Card>
   );

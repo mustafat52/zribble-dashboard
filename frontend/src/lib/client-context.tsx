@@ -1,9 +1,19 @@
 "use client";
 import { createContext, useContext, useState, useCallback, ReactNode } from "react";
 import { Contract, ClientNote, OnboardingPayment, ContractEdit } from "@/types";
-import { CONTRACTS } from "./mock-data";
+import { useQueryClient } from "@tanstack/react-query";
 import { ClientDetailModal } from "@/components/clients/ClientDetailModal";
 import { PaymentPromise } from "@/components/renewals/PaymentModal";
+import {
+  useRecordPayment,
+  useCreatePromise,
+  useCreateNote,
+  useUpsertOnboarding,
+  useCreatePriceOverride,
+  usePatchContract,
+  usePatchContractStatus,
+  useCreateContract,
+} from "@/lib/api";
 
 interface ClientContextValue {
   openClient: (clientName: string) => void;
@@ -21,80 +31,148 @@ interface ClientContextValue {
   getOnboardingPayment: (clientName: string) => OnboardingPayment | undefined;
   getEffectiveAmount: (contractId: string, year: number, month: number, baseAmount: number) => number;
   recordPayment: (data: any) => void;
-  // Contract editing
-  contractEdits: Record<string, ContractEdit[]>;          // contractId → edits
-  stoppedContracts: Set<string>;                          // contractIds stopped individually
-  additionalContracts: Contract[];                        // new services added via modal
+  contractEdits: Record<string, ContractEdit[]>;
+  stoppedContracts: Set<string>;
+  additionalContracts: Contract[];
   editContract: (contractId: string, changes: Partial<Contract>, previous: Partial<Contract>) => void;
   stopContract: (contractId: string) => void;
   reactivateContract: (contractId: string) => void;
   isContractStopped: (contractId: string) => boolean;
   addContract: (contract: Contract) => void;
   getContractEdits: (contractId: string) => ContractEdit[];
-  getEffectiveContract: (contract: Contract) => Contract;  // returns contract with edits applied
+  getEffectiveContract: (contract: Contract) => Contract;
 }
 
 const ClientContext = createContext<ClientContextValue | null>(null);
 
 export function ClientProvider({ children }: { children: ReactNode }) {
+  const qc = useQueryClient();
+
+  // ── Modal state ─────────────────────────────────────────────────────────────
   const [selectedContracts, setSelectedContracts] = useState<Contract[]>([]);
   const [open,              setOpen]              = useState(false);
-  const [stoppedClients,    setStoppedClients]    = useState<Set<string>>(new Set());
+
+  // ── Local UI state (optimistic until backend confirms) ──────────────────────
+  // Stopped clients — also reflected in DB via PATCH /contracts/:id/status
+  const [stoppedClients,   setStoppedClients]   = useState<Set<string>>(new Set());
+  const [stoppedContracts, setStoppedContracts] = useState<Set<string>>(new Set());
+
+  // In-memory fallback for promises/notes/onboarding (used until full swap)
   const [promises,          setPromises]          = useState<PaymentPromise[]>([]);
   const [notes,             setNotes]             = useState<ClientNote[]>([]);
   const [onboardingPayments, setOnboardingPayments] = useState<OnboardingPayment[]>([]);
+
+  // Price overrides (local until price-overrides endpoint is called)
   const [priceOverrides, setPriceOverrides] = useState<Record<string, { fromYear: number; fromMonth: number; newAmount: number }[]>>({});
-  // Contract editing state
+
+  // Contract edits (local optimistic)
   const [contractEdits,      setContractEdits]      = useState<Record<string, ContractEdit[]>>({});
-  const [stoppedContracts,   setStoppedContracts]   = useState<Set<string>>(new Set());
   const [additionalContracts, setAdditionalContracts] = useState<Contract[]>([]);
 
-  const openClient = useCallback((clientName: string) => {
-    const base  = CONTRACTS.filter((c) => c.clientName === clientName);
-    const extra = additionalContracts.filter((c) => c.clientName === clientName);
-    const all   = [...base, ...extra];
-    if (all.length) { setSelectedContracts(all); setOpen(true); }
-  }, [additionalContracts]);
+  // ── API mutations ────────────────────────────────────────────────────────────
+  const recordPaymentMutation    = useRecordPayment();
+  const createPromiseMutation    = useCreatePromise();
+  const createNoteMutation       = useCreateNote();
+  const upsertOnboardingMutation = useUpsertOnboarding();
+  const createOverrideMutation   = useCreatePriceOverride();
+  const patchContractMutation    = usePatchContract();
+  const patchStatusMutation      = usePatchContractStatus();
+  const createContractMutation   = useCreateContract();
 
+  // ── openClient ───────────────────────────────────────────────────────────────
+  const openClient = useCallback((clientName: string) => {
+    // Fetch latest contracts from cache
+    const cached = qc.getQueryData<Contract[]>(["contracts"]) ?? [];
+    const base   = cached.filter((c) => c.clientName === clientName);
+    const extra  = additionalContracts.filter((c) => c.clientName === clientName);
+    const all    = [...base, ...extra];
+    if (all.length) { setSelectedContracts(all); setOpen(true); }
+  }, [additionalContracts, qc]);
+
+  // ── Stop / reactivate CLIENT (all contracts for that client name) ─────────────
   const stopClient = useCallback((clientName: string) => {
     setStoppedClients((prev) => new Set(Array.from(prev).concat(clientName)));
-  }, []);
+    // Hit backend for each contract
+    const cached = qc.getQueryData<Contract[]>(["contracts"]) ?? [];
+    cached.filter((c) => c.clientName === clientName).forEach((c) => {
+      patchStatusMutation.mutate({ id: c.id, contractStatus: "stopped" });
+    });
+  }, [qc, patchStatusMutation]);
 
   const reactivateClient = useCallback((clientName: string) => {
     setStoppedClients((prev) => { const next = new Set(prev); next.delete(clientName); return next; });
-  }, []);
+    const cached = qc.getQueryData<Contract[]>(["contracts"]) ?? [];
+    cached.filter((c) => c.clientName === clientName).forEach((c) => {
+      patchStatusMutation.mutate({ id: c.id, contractStatus: "active" });
+    });
+  }, [qc, patchStatusMutation]);
 
   const isClientStopped = useCallback(
     (clientName: string) => stoppedClients.has(clientName),
     [stoppedClients]
   );
 
-  const addPromise = useCallback((p: PaymentPromise) => {
-    setPromises((prev) => [...prev, p]);
-  }, []);
+  // ── Stop / reactivate individual CONTRACT ─────────────────────────────────────
+  const stopContract = useCallback((contractId: string) => {
+    setStoppedContracts((prev) => new Set(Array.from(prev).concat(contractId)));
+    patchStatusMutation.mutate({ id: contractId, contractStatus: "stopped" });
+  }, [patchStatusMutation]);
 
+  const reactivateContract = useCallback((contractId: string) => {
+    setStoppedContracts((prev) => { const next = new Set(prev); next.delete(contractId); return next; });
+    patchStatusMutation.mutate({ id: contractId, contractStatus: "active" });
+  }, [patchStatusMutation]);
+
+  const isContractStopped = useCallback(
+    (contractId: string) => stoppedContracts.has(contractId),
+    [stoppedContracts]
+  );
+
+  // ── Promises ──────────────────────────────────────────────────────────────────
+  const addPromise = useCallback((p: PaymentPromise) => {
+    // Optimistic local update
+    setPromises((prev) => [...prev, p]);
+    // Hit backend
+    createPromiseMutation.mutate({
+      contractId:     p.contractId,
+      clientName:     p.clientName,
+      salesperson:    p.salesperson,
+      renewalYear:    p.renewalYear,
+      renewalMonth:   p.renewalMonth,
+      paidAmount:     p.paidAmount,
+      remainingAmount: p.remainingAmount,
+      promisedDate:   p.promisedDate,
+      notes:          p.notes,
+    });
+  }, [createPromiseMutation]);
+
+  // ── Notes ─────────────────────────────────────────────────────────────────────
   const addNote = useCallback((note: ClientNote) => {
     setNotes((prev) => [...prev, note]);
-  }, []);
+    createNoteMutation.mutate({ clientName: note.clientName, text: note.text });
+  }, [createNoteMutation]);
 
   const getNotesForClient = useCallback(
     (clientName: string) => notes.filter((n) => n.clientName === clientName),
     [notes]
   );
 
+  // ── Onboarding ────────────────────────────────────────────────────────────────
   const addOnboardingPayment = useCallback((p: OnboardingPayment) => {
     setOnboardingPayments((prev) => {
       const exists = prev.findIndex((x) => x.clientName === p.clientName);
       if (exists >= 0) { const next = [...prev]; next[exists] = p; return next; }
       return [...prev, p];
     });
-  }, []);
+    upsertOnboardingMutation.mutate(p);
+  }, [upsertOnboardingMutation]);
 
   const getOnboardingPayment = useCallback(
     (clientName: string) => onboardingPayments.find((p) => p.clientName === clientName),
     [onboardingPayments]
   );
 
+  // ── Price overrides ───────────────────────────────────────────────────────────
   const getEffectiveAmount = useCallback(
     (contractId: string, year: number, month: number, baseAmount: number): number => {
       const overrides = priceOverrides[contractId] ?? [];
@@ -106,49 +184,61 @@ export function ClientProvider({ children }: { children: ReactNode }) {
     [priceOverrides]
   );
 
+  // ── Record payment ────────────────────────────────────────────────────────────
   const recordPayment = useCallback((data: any) => {
-    const contract = [...CONTRACTS, ...additionalContracts].find((c) => c.id === data.contractId);
+    // Handle promises
+    if (data.promises && Array.isArray(data.promises)) {
+      const cached = qc.getQueryData<Contract[]>(["contracts"]) ?? [];
+      const contract = [...cached, ...additionalContracts].find((c) => c.id === data.contractId);
 
-    if (data.promises && Array.isArray(data.promises) && data.promises.length > 0 && contract) {
-      const renewalAmount = contract.renewalSchedule.find(
-        (r) => r.year === data.year && r.month === data.month
-      )?.amount ?? 0;
-      const totalOutstanding = renewalAmount - data.amount;
-
-      const newPromises: PaymentPromise[] = data.promises
-        .filter((p: { date: string; amount: number; notes: string }) => p.date)
-        .map((p: { date: string; amount: number; notes: string }, idx: number) => ({
-          id:              `p${Date.now()}-${idx}`,
-          contractId:      data.contractId,
-          clientName:      contract.clientName,
-          salesperson:     contract.salesperson,
-          renewalYear:     data.year,
-          renewalMonth:    data.month,
-          paidAmount:      data.amount,
-          remainingAmount: p.amount > 0 ? p.amount : totalOutstanding,
-          promisedDate:    p.date,
-          notes:           p.notes || undefined,
-          createdAt:       new Date().toISOString(),
-        }));
-
-      if (newPromises.length > 0) setPromises((prev) => [...prev, ...newPromises]);
-    }
-
-    if (data.overrideAmount && data.cascadeFromYear && data.cascadeFromMonth) {
-      setPriceOverrides((prev) => {
-        const existing = prev[data.contractId] ?? [];
-        return {
-          ...prev,
-          [data.contractId]: [
-            ...existing,
-            { fromYear: data.cascadeFromYear, fromMonth: data.cascadeFromMonth, newAmount: data.overrideAmount },
-          ],
+      data.promises.filter((p: any) => p.date).forEach((p: any, idx: number) => {
+        const newPromise: PaymentPromise = {
+          id:             `p${Date.now()}-${idx}`,
+          contractId:     data.contractId,
+          clientName:     contract?.clientName ?? "",
+          salesperson:    contract?.salesperson ?? "",
+          renewalYear:    data.year,
+          renewalMonth:   data.month,
+          paidAmount:     data.amount,
+          remainingAmount: p.amount > 0 ? p.amount : 0,
+          promisedDate:   p.date,
+          notes:          p.notes || undefined,
+          createdAt:      new Date().toISOString(),
         };
+        addPromise(newPromise);
       });
     }
-  }, [additionalContracts]);
 
-  // ── Contract editing ──────────────────────────────────────────────────────
+    // Handle price override
+    if (data.overrideAmount && data.cascadeFromYear && data.cascadeFromMonth) {
+      setPriceOverrides((prev) => ({
+        ...prev,
+        [data.contractId]: [
+          ...(prev[data.contractId] ?? []),
+          { fromYear: data.cascadeFromYear, fromMonth: data.cascadeFromMonth, newAmount: data.overrideAmount },
+        ],
+      }));
+      createOverrideMutation.mutate({
+        contractId: data.contractId,
+        fromYear:   data.cascadeFromYear,
+        fromMonth:  data.cascadeFromMonth,
+        newAmount:  data.overrideAmount,
+      });
+    }
+
+    // Record the actual payment
+    recordPaymentMutation.mutate({
+      contractId:  data.contractId,
+      renewalYear:  data.year,
+      renewalMonth: data.month,
+      amount:       data.amount,
+      paidOn:       data.paidOn || new Date().toISOString().split("T")[0],
+      notes:        data.notes,
+      type:         "renewal",
+    });
+  }, [qc, additionalContracts, addPromise, createOverrideMutation, recordPaymentMutation]);
+
+  // ── Contract editing ──────────────────────────────────────────────────────────
   const editContract = useCallback((contractId: string, changes: Partial<Contract>, previous: Partial<Contract>) => {
     const edit: ContractEdit = {
       id:             `edit-${Date.now()}`,
@@ -162,33 +252,25 @@ export function ClientProvider({ children }: { children: ReactNode }) {
       ...prev,
       [contractId]: [...(prev[contractId] ?? []), edit],
     }));
-  }, []);
-
-  const stopContract = useCallback((contractId: string) => {
-    setStoppedContracts((prev) => new Set(Array.from(prev).concat(contractId)));
-  }, []);
-
-  const reactivateContract = useCallback((contractId: string) => {
-    setStoppedContracts((prev) => { const next = new Set(prev); next.delete(contractId); return next; });
-  }, []);
-
-  const isContractStopped = useCallback(
-    (contractId: string) => stoppedContracts.has(contractId),
-    [stoppedContracts]
-  );
+    patchContractMutation.mutate({ id: contractId, changes: changes as Record<string, unknown> });
+  }, [patchContractMutation]);
 
   const addContract = useCallback((contract: Contract) => {
     setAdditionalContracts((prev) => [...prev, contract]);
-    // Re-open the modal with the updated contract list
     setSelectedContracts((prev) => [...prev, contract]);
-  }, []);
+    // Hit backend
+    createContractMutation.mutate({
+      ...contract,
+      // REPLACE with:
+      renewalSchedule: (contract.renewalSchedule ?? []) as any,
+    });
+  }, [createContractMutation]);
 
   const getContractEdits = useCallback(
     (contractId: string) => contractEdits[contractId] ?? [],
     [contractEdits]
   );
 
-  // Returns a contract with all edits applied (latest edit wins per field)
   const getEffectiveContract = useCallback((contract: Contract): Contract => {
     const edits = contractEdits[contract.id] ?? [];
     if (!edits.length) return contract;

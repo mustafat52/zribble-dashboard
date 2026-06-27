@@ -1,7 +1,7 @@
 "use client";
-import { useRef } from "react";
+import { useRef, useMemo } from "react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
-import { MONTHLY_TOTALS } from "@/lib/mock-data";
+import { useContracts } from "@/lib/api";
 import { formatCurrency, getMonthShort } from "@/lib/utils";
 import { Card, CardHeader, CardTitle } from "@/components/ui/Card";
 import { DateRange } from "@/lib/range-utils";
@@ -49,14 +49,35 @@ function inRange(year: number, month: number, range: DateRange) {
 
 export function RevenueChart({ range, months, onMonthsChange }: RevenueChartProps) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const { data: contracts = [], isLoading } = useContracts();
 
-  const data = MONTHLY_TOTALS
-    .filter((m) => inRange(m.year, m.month, range))
-    .map((m) => ({
-      name:      `${getMonthShort(m.month)} '${String(m.year).slice(2)}`,
-      Expected:  m.expected,
-      Collected: m.collected,
-    }));
+  // Build monthly totals from contracts
+  const data = useMemo(() => {
+    const monthlyMap: Record<string, { expected: number; collected: number; year: number; month: number }> = {};
+
+    contracts.forEach((c) => {
+      (c.renewalSchedule ?? []).forEach((r) => {
+        if (!inRange(r.year, r.month, range)) return;
+        const key = `${r.year}-${r.month}`;
+        if (!monthlyMap[key]) monthlyMap[key] = { expected: 0, collected: 0, year: r.year, month: r.month };
+        monthlyMap[key].expected += r.amount;
+        if (r.status === "collected") monthlyMap[key].collected += r.amount;
+        else if (r.status === "partial") {
+          // Sum actual payments for partial
+          const paid = (r as any).payments?.reduce((a: number, p: any) => a + p.amount, 0) ?? 0;
+          monthlyMap[key].collected += paid;
+        }
+      });
+    });
+
+    return Object.values(monthlyMap)
+      .sort((a, b) => (a.year * 100 + a.month) - (b.year * 100 + b.month))
+      .map((m) => ({
+        name:      `${getMonthShort(m.month)} '${String(m.year).slice(2)}`,
+        Expected:  m.expected,
+        Collected: m.collected,
+      }));
+  }, [contracts, range]);
 
   const totalExpected  = data.reduce((a, d) => a + d.Expected,  0);
   const totalCollected = data.reduce((a, d) => a + d.Collected, 0);
@@ -72,46 +93,33 @@ export function RevenueChart({ range, months, onMonthsChange }: RevenueChartProp
         <div className="min-w-0">
           <CardTitle>Revenue Pipeline</CardTitle>
           <p className="text-xs text-slate-400 mt-0.5">
-            {formatCurrency(totalExpected)} expected · {formatCurrency(totalCollected)} collected
+            {isLoading ? "Loading..." : `${formatCurrency(totalExpected)} expected · ${formatCurrency(totalCollected)} collected`}
           </p>
         </div>
 
-        {/* Range selector */}
         <div className="flex flex-col items-end gap-2 flex-shrink-0">
-          {/* Quick chips */}
           <div className="flex items-center gap-1">
             {QUICK.map((q) => (
-              <button
-                key={q}
-                onClick={() => onMonthsChange(q)}
+              <button key={q} onClick={() => onMonthsChange(q)}
                 className={cn(
                   "text-[11px] font-semibold px-2.5 py-1 rounded-lg border transition-all",
                   months === q
                     ? "bg-accent text-white border-accent shadow-sm"
                     : "bg-white text-slate-500 border-slate-200 hover:border-slate-300 hover:text-slate-700"
-                )}
-              >
+                )}>
                 {q === 30 ? "All" : `${q}m`}
               </button>
             ))}
           </div>
-
-          {/* Custom month input */}
           <div className="flex items-center gap-1.5">
             <span className="text-[11px] text-slate-400">Custom:</span>
-            <input
-              ref={inputRef}
-              type="number"
-              min={1}
-              max={30}
+            <input ref={inputRef} type="number" min={1} max={30}
               value={QUICK.includes(months) ? "" : months}
               onChange={(e) => handleInput(e.target.value)}
               placeholder="e.g. 9"
               className={cn(
                 "w-16 px-2 py-1 text-xs text-center border rounded-lg focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/20 text-slate-700",
-                !QUICK.includes(months)
-                  ? "border-accent bg-accent-light/30"
-                  : "border-slate-200 bg-white"
+                !QUICK.includes(months) ? "border-accent bg-accent-light/30" : "border-slate-200 bg-white"
               )}
             />
             <span className="text-[11px] text-slate-400">months</span>
@@ -119,27 +127,32 @@ export function RevenueChart({ range, months, onMonthsChange }: RevenueChartProp
         </div>
       </CardHeader>
 
-      {/* Range label */}
       <div className="px-5 pb-1">
         <span className="text-[11px] text-slate-400">
           Showing <span className="font-semibold text-slate-600">
-            Jul 2026 → {getMonthShort(range.toMonth)} {range.toYear}
+            {getMonthShort(range.fromMonth)} {range.fromYear} → {getMonthShort(range.toMonth)} {range.toYear}
           </span> ({range.months} month{range.months !== 1 ? "s" : ""})
         </span>
       </div>
 
       <div className="px-2 pt-2 pb-2 h-72">
-        <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={data} barGap={2} barCategoryGap="30%">
-            <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
-            <XAxis dataKey="name" tick={{ fontSize: 10, fill: "#94A3B8" }} axisLine={false} tickLine={false} />
-            <YAxis tickFormatter={(v) => formatCurrency(v)} tick={{ fontSize: 10, fill: "#94A3B8" }} axisLine={false} tickLine={false} width={70} />
-            <Tooltip content={<CustomTooltip />} cursor={{ fill: "rgba(79,70,229,0.04)" }} />
-            <Legend wrapperStyle={{ fontSize: 11, color: "#94A3B8", paddingTop: 12 }} iconType="circle" iconSize={6} />
-            <Bar dataKey="Expected"  fill="#E0E7FF" radius={[3, 3, 0, 0]} />
-            <Bar dataKey="Collected" fill="#4F46E5" radius={[3, 3, 0, 0]} />
-          </BarChart>
-        </ResponsiveContainer>
+        {isLoading ? (
+          <div className="h-full flex items-center justify-center">
+            <div className="text-sm text-slate-400 animate-pulse">Loading chart...</div>
+          </div>
+        ) : (
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={data} barGap={2} barCategoryGap="30%">
+              <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
+              <XAxis dataKey="name" tick={{ fontSize: 10, fill: "#94A3B8" }} axisLine={false} tickLine={false} />
+              <YAxis tickFormatter={(v) => formatCurrency(v)} tick={{ fontSize: 10, fill: "#94A3B8" }} axisLine={false} tickLine={false} width={70} />
+              <Tooltip content={<CustomTooltip />} cursor={{ fill: "rgba(79,70,229,0.04)" }} />
+              <Legend wrapperStyle={{ fontSize: 11, color: "#94A3B8", paddingTop: 12 }} iconType="circle" iconSize={6} />
+              <Bar dataKey="Expected"  fill="#E0E7FF" radius={[3, 3, 0, 0]} />
+              <Bar dataKey="Collected" fill="#4F46E5" radius={[3, 3, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        )}
       </div>
     </Card>
   );

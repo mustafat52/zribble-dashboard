@@ -1,6 +1,6 @@
 "use client";
 import { useMemo, useState } from "react";
-import { CONTRACTS } from "@/lib/mock-data";
+import { useContracts } from "@/lib/api";
 import { Contract } from "@/types";
 import { ClientCard } from "./ClientCard";
 import { Input } from "@/components/ui/Input";
@@ -13,7 +13,7 @@ import { Search, Users, LayoutGrid, List } from "lucide-react";
 interface ClientListProps {
   onSelectClient: (contracts: Contract[]) => void;
   stoppedClients?: (name: string) => boolean;
-  salespersonFilter?: string | null; // if set, locks to this exec and hides filter buttons
+  salespersonFilter?: string | null;
 }
 
 const SALESPERSONS = ["All","Aftab","Sarvesh","Firoz","Idris","Prajay","Vinay"];
@@ -32,14 +32,18 @@ export function ClientList({ onSelectClient, stoppedClients, salespersonFilter }
   const [viewMode,     setViewMode]     = useState<"grid"|"list">("grid");
   const [statusFilter, setStatusFilter] = useState("All");
 
-  // If a salesperson filter is locked in from auth, use it; otherwise use internal filter state
+  const { data: allContracts = [], isLoading } = useContracts();
+
   const activeExecFilter = salespersonFilter ?? (execFilter === "All" ? null : execFilter);
 
   const clientMap = useMemo(() => {
     const map: Record<string, Contract[]> = {};
-    CONTRACTS.forEach((c) => { if (!map[c.clientName]) map[c.clientName] = []; map[c.clientName].push(c); });
+    allContracts.forEach((c) => {
+      if (!map[c.clientName]) map[c.clientName] = [];
+      map[c.clientName].push(c);
+    });
     return map;
-  }, []);
+  }, [allContracts]);
 
   const clients = useMemo(() => {
     let entries = Object.entries(clientMap);
@@ -48,14 +52,18 @@ export function ClientList({ onSelectClient, stoppedClients, salespersonFilter }
     if (statusFilter === "Stopped") entries = entries.filter(([name]) => stoppedClients?.(name));
     if (search.trim()) entries = entries.filter(([name, cs]) =>
       name.toLowerCase().includes(search.toLowerCase()) ||
-      cs.some((c) => c.accountManager.toLowerCase().includes(search.toLowerCase()) || c.salesperson.toLowerCase().includes(search.toLowerCase()))
+      cs.some((c) =>
+        c.accountManager.toLowerCase().includes(search.toLowerCase()) ||
+        c.salesperson.toLowerCase().includes(search.toLowerCase())
+      )
     );
     entries.sort(([nameA, csA], [nameB, csB]) => {
       if (sortBy === "name")    return nameA.localeCompare(nameB);
       if (sortBy === "value")   return csB.reduce((a,c)=>a+c.dealValue,0) - csA.reduce((a,c)=>a+c.dealValue,0);
       if (sortBy === "exec")    return csA[0].salesperson.localeCompare(csB[0].salesperson);
       if (sortBy === "renewal") {
-        const getNext = (cs: Contract[]) => cs.flatMap((c) => c.renewalSchedule).map((r) => r.year*100+r.month).sort()[0] ?? 999999;
+        const getNext = (cs: Contract[]) =>
+          cs.flatMap((c) => (c.renewalSchedule ?? [])).map((r) => r.year*100+r.month).sort()[0] ?? 999999;
         return getNext(csA) - getNext(csB);
       }
       return 0;
@@ -71,7 +79,6 @@ export function ClientList({ onSelectClient, stoppedClients, salespersonFilter }
           <Input placeholder="Search client, AM, executive…" value={search} onChange={(e) => setSearch(e.target.value)} leftIcon={<Search className="w-3.5 h-3.5"/>}/>
         </div>
 
-        {/* Exec filter buttons — hidden when locked to a specific salesperson */}
         {!salespersonFilter && (
           <div className="flex gap-1 flex-wrap">
             {SALESPERSONS.map((sp) => (
@@ -83,7 +90,6 @@ export function ClientList({ onSelectClient, stoppedClients, salespersonFilter }
           </div>
         )}
 
-        {/* Status filter */}
         <div className="flex gap-1">
           {STATUS_FILTERS.map((s) => (
             <button key={s} onClick={() => setStatusFilter(s)} className={cn(
@@ -110,17 +116,24 @@ export function ClientList({ onSelectClient, stoppedClients, salespersonFilter }
       <div className="flex items-center gap-2">
         <Users className="w-3.5 h-3.5 text-slate-400"/>
         <span className="text-xs text-slate-400">
-          {clients.length} client{clients.length !== 1 ? "s" : ""}
-          {salespersonFilter ? ` · ${salespersonFilter}'s accounts` : (activeExecFilter || search) ? " (filtered)" : ""}
+          {isLoading ? "Loading clients..." : `${clients.length} client${clients.length !== 1 ? "s" : ""}${salespersonFilter ? ` · ${salespersonFilter}'s accounts` : (activeExecFilter || search) ? " (filtered)" : ""}`}
         </span>
       </div>
 
       {/* Grid or List */}
-      {clients.length === 0 ? (
+      {isLoading ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <div key={i} className="bg-white border border-slate-200 rounded-xl p-4 shadow-card animate-pulse h-40" />
+          ))}
+        </div>
+      ) : clients.length === 0 ? (
         <EmptyState icon={Users} title="No clients found" description="Try adjusting your search or filters."/>
       ) : viewMode === "grid" ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {clients.map(([name, cs]) => <ClientCard key={name} contracts={cs} onClick={() => onSelectClient(cs)} stopped={stoppedClients?.(name)}/>)}
+          {clients.map(([name, cs]) => (
+            <ClientCard key={name} contracts={cs} onClick={() => onSelectClient(cs)} stopped={stoppedClients?.(name)}/>
+          ))}
         </div>
       ) : (
         <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-card">
@@ -131,13 +144,16 @@ export function ClientList({ onSelectClient, stoppedClients, salespersonFilter }
               const color      = SALESPERSON_COLORS[primary.salesperson];
               return (
                 <button key={name} onClick={() => onSelectClient(cs)} className="w-full flex items-center gap-4 px-5 py-3 hover:bg-slate-50 transition-colors text-left">
-                  <div className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold flex-shrink-0" style={{backgroundColor:color+"15", color}}>
+                  <div className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold flex-shrink-0"
+                    style={{backgroundColor:color+"15", color}}>
                     {name.charAt(0)}
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-slate-700 truncate">{name}</p>
                     <p className="text-xs text-slate-400">{primary.salesperson} · {primary.accountManager}</p>
-                    {stoppedClients?.(name) && <span className="text-[10px] text-accent-red bg-accent-redLight border border-red-200 px-1 py-0.5 rounded">Stopped</span>}
+                    {stoppedClients?.(name) && (
+                      <span className="text-[10px] text-accent-red bg-accent-redLight border border-red-200 px-1 py-0.5 rounded">Stopped</span>
+                    )}
                   </div>
                   <div className="flex items-center gap-4 flex-shrink-0">
                     <span className="text-xs text-slate-400 hidden sm:block">{cs.length} service{cs.length > 1 ? "s" : ""}</span>

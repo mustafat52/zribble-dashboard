@@ -1,9 +1,10 @@
 "use client";
 import { cn, formatCurrency } from "@/lib/utils";
-import { DASHBOARD_STATS, CONTRACTS } from "@/lib/mock-data";
+import { useContracts } from "@/lib/api";
 import { TrendingUp, Users, CalendarClock, CheckCircle2, AlertTriangle, Clock, IndianRupee, ArrowUpRight, UserPlus, RefreshCw } from "lucide-react";
 import { DateRange } from "@/lib/range-utils";
 import { useAuth } from "@/lib/auth-context";
+import { Contract } from "@/types";
 
 interface StatCardsProps { range: DateRange; }
 interface StatCardProps {
@@ -50,38 +51,87 @@ function inRange(year: number, month: number, range: DateRange) {
   return val >= range.fromYear * 100 + range.fromMonth && val <= range.toYear * 100 + range.toMonth;
 }
 
-export function StatCards({ range }: StatCardsProps) {
-  const { user, canPerform } = useAuth();
-  const execFilter = canPerform("view_all") ? null : user?.salesperson ?? null;
-  const contracts  = execFilter ? CONTRACTS.filter((c) => c.salesperson === execFilter) : CONTRACTS;
-
-  const NOW_YEAR = 2026; const NOW_MONTH = 6;
+function computeStats(contracts: Contract[], range: DateRange) {
+  const NOW_YEAR = new Date().getFullYear();
+  const NOW_MONTH = new Date().getMonth() + 1;
+  // Current month + 1 for "due next month"
+  const NEXT_MONTH = NOW_MONTH === 12 ? 1 : NOW_MONTH + 1;
+  const NEXT_YEAR  = NOW_MONTH === 12 ? NOW_YEAR + 1 : NOW_YEAR;
 
   const rangePipeline = contracts.reduce((sum, c) =>
-    sum + c.renewalSchedule.filter((r) => inRange(r.year, r.month, range)).reduce((a, r) => a + r.amount, 0), 0);
+    sum + (c.renewalSchedule ?? []).filter((r) => inRange(r.year, r.month, range)).reduce((a, r) => a + r.amount, 0), 0);
 
-  const julExpected  = contracts.reduce((sum, c) => sum + c.renewalSchedule.filter((r) => r.year===2026 && r.month===7).reduce((a,r)=>a+r.amount,0), 0);
-  const julCollected = contracts.reduce((sum, c) => sum + c.renewalSchedule.filter((r) => r.year===2026 && r.month===7 && r.status==="collected").reduce((a,r)=>a+r.amount,0), 0);
-  const julPending   = julExpected - julCollected;
-  const overdueCount = contracts.reduce((a, c) => a + c.renewalSchedule.filter((r) => r.status==="overdue").length, 0);
-  const overdueValue = contracts.reduce((a, c) => a + c.renewalSchedule.filter((r) => r.status==="overdue").reduce((b,r)=>b+r.amount,0), 0);
-  const collectionRate = julExpected > 0 ? Math.round((julCollected / julExpected) * 100) : 0;
+  // Use the current month for stats
+  const thisMonthExpected  = contracts.reduce((sum, c) =>
+    sum + (c.renewalSchedule ?? []).filter((r) => r.year === NOW_YEAR && r.month === NOW_MONTH).reduce((a, r) => a + r.amount, 0), 0);
+
+  const thisMonthCollected = contracts.reduce((sum, c) =>
+    sum + (c.renewalSchedule ?? [])
+      .filter((r) => r.year === NOW_YEAR && r.month === NOW_MONTH && r.status === "collected")
+      .reduce((a, r) => a + r.amount, 0), 0);
+
+  const thisMonthPending = thisMonthExpected - thisMonthCollected;
+
+  const overdueCount = contracts.reduce((a, c) =>
+    a + (c.renewalSchedule ?? []).filter((r) => r.status === "overdue").length, 0);
+  const overdueValue = contracts.reduce((a, c) =>
+    a + (c.renewalSchedule ?? []).filter((r) => r.status === "overdue").reduce((b, r) => b + r.amount, 0), 0);
+
+  const collectionRate = thisMonthExpected > 0 ? Math.round((thisMonthCollected / thisMonthExpected) * 100) : 0;
   const totalAccounts  = new Set(contracts.map((c) => c.clientName)).size;
 
   const newClientsThisMonth = new Set(
-    contracts.filter((c) => { const d = new Date(c.createdAt); return d.getFullYear()===NOW_YEAR && d.getMonth()+1===NOW_MONTH; }).map((c) => c.clientName)
+    contracts.filter((c) => {
+      const d = new Date(c.createdAt);
+      return d.getFullYear() === NOW_YEAR && d.getMonth() + 1 === NOW_MONTH;
+    }).map((c) => c.clientName)
   ).size;
 
-  const renewalsDueThisMonth = contracts.reduce((count, c) =>
-    count + c.renewalSchedule.filter((r) => r.year===NOW_YEAR && r.month===NOW_MONTH+1).length, 0);
+  const renewalsDueNextMonth = contracts.reduce((count, c) =>
+    count + (c.renewalSchedule ?? []).filter((r) => r.year === NEXT_YEAR && r.month === NEXT_MONTH).length, 0);
+
+  const monthLabel = new Date(NOW_YEAR, NOW_MONTH - 1).toLocaleString("en-IN", { month: "short", year: "numeric" });
+  const nextLabel  = new Date(NEXT_YEAR, NEXT_MONTH - 1).toLocaleString("en-IN", { month: "short", year: "numeric" });
+
+  return {
+    rangePipeline, thisMonthExpected, thisMonthCollected, thisMonthPending,
+    overdueCount, overdueValue, collectionRate, totalAccounts,
+    newClientsThisMonth, renewalsDueNextMonth, monthLabel, nextLabel,
+  };
+}
+
+export function StatCards({ range }: StatCardsProps) {
+  const { user, canPerform } = useAuth();
+  const execFilter = canPerform("view_all") ? null : user?.salesperson ?? null;
+  const { data: allContracts = [], isLoading } = useContracts();
+
+  const contracts = execFilter
+    ? allContracts.filter((c) => c.salesperson === execFilter)
+    : allContracts;
+
+  if (isLoading) {
+    return (
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div key={i} className="bg-white border border-slate-200 rounded-xl p-4 shadow-card animate-pulse h-24" />
+        ))}
+      </div>
+    );
+  }
+
+  const {
+    rangePipeline, thisMonthExpected, thisMonthCollected, thisMonthPending,
+    overdueCount, overdueValue, collectionRate, totalAccounts,
+    newClientsThisMonth, renewalsDueNextMonth, monthLabel, nextLabel,
+  } = computeStats(contracts, range);
 
   const cards: StatCardProps[] = [
-    { label:"Total Pipeline",  value:formatCurrency(rangePipeline),   sub:`Next ${range.months} months`,        icon:<IndianRupee className="w-4 h-4"/>,  accent:"indigo", trend:"+12%", trendUp:true },
-    { label:"Active Accounts", value:totalAccounts.toString(),        sub:execFilter?`${execFilter}'s clients`:"Across 6 executives", icon:<Users className="w-4 h-4"/>, accent:"cyan" },
-    { label:"Jul Expected",    value:formatCurrency(julExpected),     sub:"This month's renewals",               icon:<CalendarClock className="w-4 h-4"/>, accent:"purple" },
-    { label:"Jul Collected",   value:formatCurrency(julCollected),    sub:`${collectionRate}% collection rate`,  icon:<CheckCircle2 className="w-4 h-4"/>,  accent:"green", trend:`${collectionRate}%`, trendUp:collectionRate>=70 },
-    { label:"Jul Pending",     value:formatCurrency(julPending),      sub:"Outstanding balance",                 icon:<Clock className="w-4 h-4"/>,         accent:"amber" },
-    { label:"Overdue",         value:overdueCount.toString(),         sub:formatCurrency(overdueValue)+" at risk", icon:<AlertTriangle className="w-4 h-4"/>, accent:"red" },
+    { label:"Total Pipeline",        value:formatCurrency(rangePipeline),       sub:`Next ${range.months} months`,             icon:<IndianRupee className="w-4 h-4"/>,  accent:"indigo" },
+    { label:"Active Accounts",       value:totalAccounts.toString(),            sub:execFilter?`${execFilter}'s clients`:"Across 6 executives", icon:<Users className="w-4 h-4"/>, accent:"cyan" },
+    { label:`${monthLabel} Expected`, value:formatCurrency(thisMonthExpected),  sub:"This month's renewals",                   icon:<CalendarClock className="w-4 h-4"/>, accent:"purple" },
+    { label:`${monthLabel} Collected`,value:formatCurrency(thisMonthCollected), sub:`${collectionRate}% collection rate`,      icon:<CheckCircle2 className="w-4 h-4"/>,  accent:"green", trend:`${collectionRate}%`, trendUp:collectionRate>=70 },
+    { label:`${monthLabel} Pending`,  value:formatCurrency(thisMonthPending),   sub:"Outstanding balance",                     icon:<Clock className="w-4 h-4"/>,         accent:"amber" },
+    { label:"Overdue",               value:overdueCount.toString(),             sub:formatCurrency(overdueValue)+" at risk",   icon:<AlertTriangle className="w-4 h-4"/>, accent:"red" },
   ];
 
   return (
@@ -91,7 +141,7 @@ export function StatCards({ range }: StatCardsProps) {
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-lg bg-accent-light flex items-center justify-center flex-shrink-0"><UserPlus className="w-4 h-4 text-accent"/></div>
           <div>
-            <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wide">New Clients — Jul 2026</p>
+            <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wide">New Clients — {monthLabel}</p>
             <p className="text-2xl font-bold text-slate-800 leading-tight">{newClientsThisMonth}</p>
             <p className="text-xs text-slate-400 mt-0.5">Onboarded this month</p>
           </div>
@@ -100,9 +150,9 @@ export function StatCards({ range }: StatCardsProps) {
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-lg bg-accent-greenLight flex items-center justify-center flex-shrink-0"><RefreshCw className="w-4 h-4 text-accent-green"/></div>
           <div>
-            <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wide">Renewals Due — Jul 2026</p>
-            <p className="text-2xl font-bold text-slate-800 leading-tight">{renewalsDueThisMonth}</p>
-            <p className="text-xs text-slate-400 mt-0.5">Existing clients renewing</p>
+            <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wide">Renewals Due — {nextLabel}</p>
+            <p className="text-2xl font-bold text-slate-800 leading-tight">{renewalsDueNextMonth}</p>
+            <p className="text-xs text-slate-400 mt-0.5">Upcoming next month</p>
           </div>
         </div>
         <div className="w-px h-12 bg-slate-200 flex-shrink-0" />
@@ -110,14 +160,16 @@ export function StatCards({ range }: StatCardsProps) {
           <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wide mb-2">Breakdown</p>
           <div className="flex items-center gap-2">
             <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden flex">
-              {renewalsDueThisMonth+newClientsThisMonth>0&&(
+              {renewalsDueNextMonth + newClientsThisMonth > 0 && (
                 <>
-                  <div className="h-full bg-accent rounded-l-full transition-all duration-500" style={{width:`${Math.round((newClientsThisMonth/(renewalsDueThisMonth+newClientsThisMonth))*100)}%`}}/>
-                  <div className="h-full bg-accent-green rounded-r-full transition-all duration-500" style={{width:`${Math.round((renewalsDueThisMonth/(renewalsDueThisMonth+newClientsThisMonth))*100)}%`}}/>
+                  <div className="h-full bg-accent rounded-l-full transition-all duration-500"
+                    style={{width:`${Math.round((newClientsThisMonth/(renewalsDueNextMonth+newClientsThisMonth))*100)}%`}}/>
+                  <div className="h-full bg-accent-green rounded-r-full transition-all duration-500"
+                    style={{width:`${Math.round((renewalsDueNextMonth/(renewalsDueNextMonth+newClientsThisMonth))*100)}%`}}/>
                 </>
               )}
             </div>
-            <span className="text-xs text-slate-500 flex-shrink-0">{renewalsDueThisMonth+newClientsThisMonth} total</span>
+            <span className="text-xs text-slate-500 flex-shrink-0">{renewalsDueNextMonth+newClientsThisMonth} total</span>
           </div>
           <div className="flex items-center gap-4 mt-1.5">
             <span className="flex items-center gap-1 text-[10px] text-slate-400"><span className="w-2 h-2 rounded-full bg-accent inline-block"/>New</span>
