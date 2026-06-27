@@ -46,9 +46,9 @@ router.post("/login", async (req: Request, res: Response) => {
     // httpOnly cookie — never exposed to JS
     res.cookie("token", token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: process.env.NODE_ENV === "production" ? "strict" : "lax",
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days in ms
+      secure: true,
+      sameSite: "none",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
     res.json({
@@ -71,8 +71,8 @@ router.post("/login", async (req: Request, res: Response) => {
 router.post("/logout", authenticate, (_req: Request, res: Response) => {
   res.clearCookie("token", {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: process.env.NODE_ENV === "production" ? "strict" : "lax",
+    secure: true,
+    sameSite: "none",
   });
   res.json({ success: true });
 });
