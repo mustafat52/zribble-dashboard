@@ -30,8 +30,22 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
 export function useContracts() {
   return useQuery<Contract[]>({
     queryKey: ["contracts"],
-    queryFn:  () => apiFetch<Contract[]>("/contracts"),
-    staleTime: 30_000, // 30s — don't refetch on every mount
+    queryFn: async () => {
+      const data = await apiFetch<any[]>("/contracts");
+      // Backend returns renewalMonths, frontend expects renewalSchedule
+      return data.map((c) => ({
+        ...c,
+        renewalSchedule: (c.renewalMonths ?? []).map((r: any) => ({
+          contractId: c.id,
+          year: r.year,
+          month: r.month,
+          amount: r.overriddenAmount ?? r.amount,
+          status: r.status,
+          payments: [],
+        })),
+      }));
+    },
+    staleTime: 30_000,
   });
 }
 
