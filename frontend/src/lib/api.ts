@@ -55,7 +55,7 @@ export function useContracts() {
 export function useCreateContract() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: Partial<Contract> & { renewalSchedule?: { year: number; month: number; amount: number }[] }) =>
+    mutationFn: (data: Omit<Partial<Contract>, "renewalSchedule"> & { renewalSchedule?: { year: number; month: number; amount: number }[] }) =>
       apiFetch<Contract>("/contracts", { method: "POST", body: JSON.stringify(data) }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["contracts"] }),
   });
