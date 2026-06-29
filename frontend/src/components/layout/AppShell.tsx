@@ -18,7 +18,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (isLoading) return;
     if (!user && !isPublic) router.replace("/login");
-    if (user && pathname === "/login") router.replace("/dashboard");
+    // Note: we intentionally do NOT auto-redirect away from /login when `user`
+    // becomes truthy. The login page itself owns that redirect, after its
+    // welcome + data-prefetch animation sequence finishes. Auto-redirecting
+    // here would fire the instant setUser() runs inside login() and skip
+    // that sequence entirely.
   }, [user, isLoading, pathname, isPublic, router]);
 
   // Loading state — show nothing to avoid flash

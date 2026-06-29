@@ -56,49 +56,6 @@ export interface Payment {
   recordedBy: string;
 }
 
-export interface SalesSummary {
-  salesperson: Salesperson;
-  totalAccounts: number;
-  totalContractValue: number;
-  renewals2026: number;
-  renewals2027: number;
-  renewals2028: number;
-  totalPipeline: number;
-}
-
-export interface MonthlyTotal {
-  year: number;
-  month: number;
-  monthLabel: string;
-  expected: number;
-  collected: number;
-  pending: number;
-}
-
-export interface DashboardStats {
-  totalAccounts: number;
-  totalPipeline: number;
-  thisMonthExpected: number;
-  thisMonthCollected: number;
-  thisMonthPending: number;
-  overdueCount: number;
-  overdueValue: number;
-  salesSummary: SalesSummary[];
-  monthlyTotals: MonthlyTotal[];
-  upcomingRenewals: UpcomingRenewal[];
-}
-
-export interface UpcomingRenewal {
-  contractId: string;
-  clientName: string;
-  salesperson: Salesperson;
-  accountManager: string;
-  product: ProductType;
-  amount: number;
-  dueDate: string;
-  status: PaymentStatus;
-}
-
 export interface NewContractForm {
   salesperson: Salesperson;
   clientName: string;
@@ -131,8 +88,6 @@ export interface OnboardingPayment {
   paidOn: string;
   notes?: string;
 }
-
-// ── ADD THESE to src/types/index.ts ──────────────────────────────────────────
 
 export interface ContractEdit {
   id: string;

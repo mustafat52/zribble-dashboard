@@ -13,7 +13,7 @@ import { PaymentPromise } from "@/components/renewals/PaymentModal";
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
 
 // ─── Generic fetch wrapper ────────────────────────────────────────────────────
-async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
+export async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     credentials: "include",
     headers: { "Content-Type": "application/json" },
