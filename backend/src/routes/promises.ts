@@ -6,6 +6,30 @@ import { canWrite } from "../middleware/role";
 const router = Router();
 router.use(authenticate);
 
+// ── GET /promises ─────────────────────────────────────────────────────────────
+// Returns all promises visible to the requesting user.
+// Employees see only their own salesperson's promises.
+// Admins / accounts team see all.
+router.get("/", async (req: Request, res: Response) => {
+  try {
+    const user = req.user!;
+    const where =
+      user.role === "employee" && user.salesperson
+        ? { salesperson: user.salesperson }
+        : {};
+
+    const promises = await prisma.promise.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+    });
+
+    res.json(promises);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch promises" });
+  }
+});
+
 // ── POST /promises ────────────────────────────────────────────────────────────
 router.post("/", canWrite, async (req: Request, res: Response) => {
   try {
@@ -50,6 +74,30 @@ router.post("/", canWrite, async (req: Request, res: Response) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to create promise" });
+  }
+});
+
+// ── DELETE /promises/:id ──────────────────────────────────────────────────────
+router.delete("/:id", canWrite, async (req: Request, res: Response) => {
+  try {
+    const user = req.user!;
+    const promise = await prisma.promise.findUnique({ where: { id: req.params.id } });
+
+    if (!promise) {
+      res.status(404).json({ error: "Promise not found" });
+      return;
+    }
+
+    if (user.role === "employee" && promise.salesperson !== user.salesperson) {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
+
+    await prisma.promise.delete({ where: { id: req.params.id } });
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to delete promise" });
   }
 });
 

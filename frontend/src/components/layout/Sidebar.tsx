@@ -5,9 +5,10 @@ import { cn, SALESPERSON_COLORS } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
 import {
   LayoutDashboard, CalendarDays, CreditCard, Users, UserCircle,
-  PlusCircle, TrendingUp, ChevronRight, Bell, Settings, LogOut, BarChart2,
+  PlusCircle, TrendingUp, ChevronRight, Settings, LogOut, BarChart2,
 } from "lucide-react";
 
+// "New Entry" is intentionally excluded here — it's rendered conditionally below
 const NAV_ITEMS = [
   { group: "Overview", items: [
     { label: "Dashboard",   href: "/dashboard",   icon: LayoutDashboard },
@@ -17,9 +18,6 @@ const NAV_ITEMS = [
   { group: "Management", items: [
     { label: "Clients",     href: "/clients",     icon: Users           },
     { label: "Salesperson", href: "/salesperson", icon: UserCircle      },
-  ]},
-  { group: "Actions", items: [
-    { label: "New Entry",   href: "/new-entry",   icon: PlusCircle      },
   ]},
 ];
 
@@ -42,13 +40,32 @@ export function Sidebar() {
     router.replace("/login");
   }
 
+  function navLink(href: string, icon: React.ElementType, label: string) {
+    const Icon   = icon;
+    const active = pathname === href || pathname.startsWith(href + "/");
+    return (
+      <li key={href}>
+        <Link href={href} className={cn(
+          "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-150 group",
+          active
+            ? "bg-accent-light text-accent border border-accent-border"
+            : "text-slate-600 hover:text-slate-800 hover:bg-slate-50"
+        )}>
+          <Icon className={cn("w-4 h-4 flex-shrink-0", active ? "text-accent" : "text-slate-400 group-hover:text-slate-600")} />
+          {label}
+          {active && <ChevronRight className="w-3 h-3 ml-auto text-accent/50" />}
+        </Link>
+      </li>
+    );
+  }
+
   return (
     <aside className="fixed left-0 top-0 h-screen w-60 bg-white border-r border-slate-200 flex flex-col z-40 shadow-sm">
       {/* Logo */}
       <div className="px-5 py-5 border-b border-slate-100">
         <div className="flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-lg bg-accent flex items-center justify-center shadow-sm">
-            <TrendingUp className="w-4 h-4 text-white" />
+            <LayoutDashboard className="w-4 h-4 text-white" />
           </div>
           <div>
             <p className="text-sm font-bold text-slate-800 leading-none">ZribbleOS</p>
@@ -63,43 +80,26 @@ export function Sidebar() {
           <div key={group.group}>
             <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest px-2 mb-1.5">{group.group}</p>
             <ul className="space-y-0.5">
-              {group.items.map(({ label, href, icon: Icon }) => {
-                const active = pathname === href || pathname.startsWith(href + "/");
-                return (
-                  <li key={href}>
-                    <Link href={href} className={cn(
-                      "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-150 group",
-                      active
-                        ? "bg-accent-light text-accent border border-accent-border"
-                        : "text-slate-600 hover:text-slate-800 hover:bg-slate-50"
-                    )}>
-                      <Icon className={cn("w-4 h-4 flex-shrink-0", active ? "text-accent" : "text-slate-400 group-hover:text-slate-600")} />
-                      {label}
-                      {active && <ChevronRight className="w-3 h-3 ml-auto text-accent/50" />}
-                    </Link>
-                  </li>
-                );
-              })}
+              {group.items.map(({ label, href, icon }) => navLink(href, icon, label))}
             </ul>
           </div>
         ))}
+
+        {/* Actions — New Entry only shown to users who can add clients */}
+        {canPerform("add_client") && (
+          <div>
+            <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest px-2 mb-1.5">Actions</p>
+            <ul className="space-y-0.5">
+              {navLink("/new-entry", PlusCircle, "New Entry")}
+            </ul>
+          </div>
+        )}
 
         {/* Insights — super_admin and accounts_team only */}
         {canPerform("view_all") && (
           <div>
             <ul className="space-y-0.5">
-              <li>
-                <Link href="/insights" className={cn(
-                  "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-150 group",
-                  pathname === "/insights"
-                    ? "bg-accent-light text-accent border border-accent-border"
-                    : "text-slate-600 hover:text-slate-800 hover:bg-slate-50"
-                )}>
-                  <BarChart2 className={cn("w-4 h-4 flex-shrink-0", pathname === "/insights" ? "text-accent" : "text-slate-400 group-hover:text-slate-600")} />
-                  Insights
-                  {pathname === "/insights" && <ChevronRight className="w-3 h-3 ml-auto text-accent/50" />}
-                </Link>
-              </li>
+              {navLink("/insights", BarChart2, "Insights")}
             </ul>
           </div>
         )}
@@ -109,18 +109,7 @@ export function Sidebar() {
           <div>
             <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest px-2 mb-1.5">Admin</p>
             <ul className="space-y-0.5">
-              <li>
-                <Link href="/settings" className={cn(
-                  "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-150 group",
-                  pathname === "/settings"
-                    ? "bg-accent-light text-accent border border-accent-border"
-                    : "text-slate-600 hover:text-slate-800 hover:bg-slate-50"
-                )}>
-                  <Settings className={cn("w-4 h-4 flex-shrink-0", pathname === "/settings" ? "text-accent" : "text-slate-400 group-hover:text-slate-600")} />
-                  Settings
-                  {pathname === "/settings" && <ChevronRight className="w-3 h-3 ml-auto text-accent/50" />}
-                </Link>
-              </li>
+              {navLink("/settings", Settings, "Settings")}
             </ul>
           </div>
         )}

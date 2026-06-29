@@ -43,11 +43,15 @@ router.post("/login", async (req: Request, res: Response) => {
 
     const token = jwt.sign(payload, secret, { expiresIn: "7d" });
 
+    const isProd = process.env.NODE_ENV === "production";
+
     // httpOnly cookie — never exposed to JS
+    // secure + sameSite:"none" required in prod (cross-origin Vercel → Railway)
+    // lax + no secure required in local dev (same-origin HTTP)
     res.cookie("token", token, {
       httpOnly: true,
-      secure: true,
-      sameSite: "none",
+      secure: isProd,
+      sameSite: isProd ? "none" : "lax",
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
@@ -69,10 +73,13 @@ router.post("/login", async (req: Request, res: Response) => {
 
 // ── POST /auth/logout ─────────────────────────────────────────────────────────
 router.post("/logout", authenticate, (_req: Request, res: Response) => {
+  const isProd = process.env.NODE_ENV === "production";
+
+  // clearCookie options must exactly match the set options or the browser won't clear it
   res.clearCookie("token", {
     httpOnly: true,
-    secure: true,
-    sameSite: "none",
+    secure: isProd,
+    sameSite: isProd ? "none" : "lax",
   });
   res.json({ success: true });
 });

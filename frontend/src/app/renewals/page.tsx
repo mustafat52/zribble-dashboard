@@ -14,30 +14,19 @@ import { useAuth } from "@/lib/auth-context";
 type ViewMode = "calendar" | "table";
 interface PaymentTarget { contractId: string; year: number; month: number; }
 
-const SEED_PROMISES: PaymentPromise[] = [
-  { id:"p1", contractId:"c001", clientName:"Arohi Eye Clinic",        salesperson:"Aftab",   renewalYear:2026, renewalMonth:7, paidAmount:80000,  remainingAmount:79900,  promisedDate:"2026-07-05", notes:"Will pay rest by 5th",  createdAt:"2026-07-01" },
-  { id:"p2", contractId:"c002", clientName:"Swiss Dental",            salesperson:"Aftab",   renewalYear:2026, renewalMonth:7, paidAmount:55000,  remainingAmount:55000,  promisedDate:"2026-07-12", notes:"Cheque on 12th",        createdAt:"2026-07-01" },
-  { id:"p3", contractId:"c003", clientName:"Varun Attari (3 Salons)", salesperson:"Sarvesh", renewalYear:2026, renewalMonth:7, paidAmount:100000, remainingAmount:100000, promisedDate:"2026-07-08", notes:"NEFT transfer",         createdAt:"2026-07-01" },
-  { id:"p4", contractId:"c004", clientName:"Glowniqs Clinic",         salesperson:"Sarvesh", renewalYear:2026, renewalMonth:7, paidAmount:106200, remainingAmount:106200, promisedDate:"2026-07-15", notes:"Second instalment",     createdAt:"2026-07-02" },
-  { id:"p5", contractId:"c005", clientName:"Junoesque",               salesperson:"Firoz",   renewalYear:2026, renewalMonth:7, paidAmount:77000,  remainingAmount:77000,  promisedDate:"2026-07-10", notes:"Post-dated cheque",     createdAt:"2026-07-01" },
-  { id:"p6", contractId:"c006", clientName:"Cherag Makeovers",        salesperson:"Prajay",  renewalYear:2026, renewalMonth:7, paidAmount:110050, remainingAmount:110050, promisedDate:"2026-07-03", notes:"Balance payment",       createdAt:"2026-07-01" },
-  { id:"p7", contractId:"c007", clientName:"Asha Neuromodulation",    salesperson:"Idris",   renewalYear:2026, renewalMonth:7, paidAmount:177000, remainingAmount:177000, promisedDate:"2026-07-18", notes:"Second part",           createdAt:"2026-07-02" },
-  { id:"p8", contractId:"c008", clientName:"Cosme Wellness",          salesperson:"Firoz",   renewalYear:2026, renewalMonth:7, paidAmount:70000,  remainingAmount:70000,  promisedDate:"2026-07-25", notes:"Balance",               createdAt:"2026-07-02" },
-];
-
 export default function RenewalsPage() {
   const [year,          setYear]          = useState(2026);
   const [month,         setMonth]         = useState(7);
   const [view,          setView]          = useState<ViewMode>("calendar");
   const [paymentTarget, setPaymentTarget] = useState<PaymentTarget | null>(null);
 
-  const { promises: contextPromises, addPromise } = useClient();
+  const { promises: contextPromises, recordPayment } = useClient();
   const { user, canPerform } = useAuth();
 
   // Filter by salesperson for employee logins
   const execFilter = canPerform("view_all") ? null : user?.salesperson ?? null;
 
-  const allPromises = [...SEED_PROMISES, ...contextPromises].filter(
+  const allPromises = contextPromises.filter(
     (p) => !execFilter || p.salesperson === execFilter
   );
 
@@ -50,9 +39,18 @@ export default function RenewalsPage() {
     amount: number; status: string; notes: string; paidOn: string;
     promise?: Omit<PaymentPromise, "id" | "createdAt">;
   }) {
-    if (data.promise) {
-      addPromise({ ...data.promise, id: `p${Date.now()}`, createdAt: new Date().toISOString() });
-    }
+    // recordPayment handles both the payment POST and any promise creation.
+    // Bridge singular `promise` → plural `promises` array that recordPayment expects.
+    recordPayment({
+      contractId: data.contractId,
+      year:       data.year,
+      month:      data.month,
+      amount:     data.amount,
+      notes:      data.notes,
+      paidOn:     data.paidOn,
+      promises:   data.promise ? [{ date: data.promise.promisedDate, amount: data.promise.remainingAmount, notes: data.promise.notes }] : [],
+    });
+    setPaymentTarget(null);
   }
 
   const monthPromises = allPromises.filter((p) => {
@@ -103,7 +101,6 @@ export default function RenewalsPage() {
 
         <div className="flex-1 min-w-0">
           {view === "calendar" ? (
-            // Pass salesperson to filter renewals on the calendar
             <RenewalCalendar year={year} month={month} promises={allPromises} salesperson={execFilter ?? undefined} />
           ) : (
             <RenewalTable year={year} month={month} onMarkPayment={openPayment} salesperson={execFilter ?? undefined} />

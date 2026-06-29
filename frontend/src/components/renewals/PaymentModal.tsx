@@ -4,7 +4,7 @@ import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { StatusBadge } from "@/components/ui/Badge";
-import { CONTRACTS } from "@/lib/mock-data";
+import { useContracts } from "@/lib/api";
 import { formatCurrency, getMonthShort } from "@/lib/utils";
 import { PaymentStatus } from "@/types";
 import { IndianRupee, FileText, CheckCircle2, Clock, AlertCircle } from "lucide-react";
@@ -45,7 +45,9 @@ interface PaymentModalProps {
 export function PaymentModal({
   open, onClose, contractId, renewalYear, renewalMonth, onSave,
 }: PaymentModalProps) {
-  const contract = CONTRACTS.find((c) => c.id === contractId);
+  // Pull live contract data from the API cache — no mock-data needed
+  const { data: contracts = [] } = useContracts();
+  const contract = contracts.find((c) => c.id === contractId);
   const renewal  = contract?.renewalSchedule.find(
     (r) => r.year === renewalYear && r.month === renewalMonth
   );
@@ -57,7 +59,7 @@ export function PaymentModal({
   const [promiseNotes, setPromiseNotes] = useState("");
   const [loading,      setLoading]      = useState(false);
 
-  // Reset when contract changes
+  // Reset when contract/month changes
   useEffect(() => {
     setAmount(String(renewal?.amount ?? ""));
     setNotes("");
@@ -69,16 +71,12 @@ export function PaymentModal({
   if (!contract || !renewal) return null;
 
   const fullAmount    = renewal?.amount ?? 0;
-  const paidSoFar     = renewal?.payments.reduce((a, p) => a + p.amount, 0);
+  const paidSoFar     = renewal?.payments.reduce((a, p) => a + p.amount, 0) ?? 0;
   const outstanding   = fullAmount - paidSoFar;
   const enteredAmount = Number(amount) || 0;
   const remaining     = outstanding - enteredAmount;
   const isPartial     = enteredAmount > 0 && enteredAmount < outstanding;
   const isFull        = enteredAmount >= outstanding;
-
-  function handleAmountChange(val: string) {
-    setAmount(val);
-  }
 
   async function handleSave() {
     if (!enteredAmount || enteredAmount <= 0) return;
@@ -160,7 +158,7 @@ export function PaymentModal({
             max={outstanding}
             placeholder={`Up to ${formatCurrency(outstanding)}`}
             value={amount}
-            onChange={(e) => handleAmountChange(e.target.value)}
+            onChange={(e) => setAmount(e.target.value)}
             leftIcon={<IndianRupee className="w-3.5 h-3.5" />}
           />
 

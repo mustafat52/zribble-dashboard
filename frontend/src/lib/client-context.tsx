@@ -52,8 +52,9 @@ export function ClientProvider({ children }: { children: ReactNode }) {
   const [selectedContracts, setSelectedContracts] = useState<Contract[]>([]);
   const [open,              setOpen]              = useState(false);
 
-  // ── Local UI state (optimistic until backend confirms) ──────────────────────
-  // Stopped clients — also reflected in DB via PATCH /contracts/:id/status
+  // ── Local optimistic sets — used only for instant feedback before the query
+  //    cache refetches after a mutation. The source of truth is contractStatus
+  //    on the cached Contract objects (read in isClientStopped/isContractStopped).
   const [stoppedClients,   setStoppedClients]   = useState<Set<string>>(new Set());
   const [stoppedContracts, setStoppedContracts] = useState<Set<string>>(new Set());
 
@@ -107,9 +108,21 @@ export function ClientProvider({ children }: { children: ReactNode }) {
     });
   }, [qc, patchStatusMutation]);
 
+  // isClientStopped: check the live query cache first (survives refresh),
+  // fall back to the local optimistic Set (covers the instant after a click
+  // before the mutation's onSuccess invalidation refetches).
   const isClientStopped = useCallback(
-    (clientName: string) => stoppedClients.has(clientName),
-    [stoppedClients]
+    (clientName: string) => {
+      const cached = qc.getQueryData<Contract[]>(["contracts"]) ?? [];
+      const clientContracts = cached.filter((c) => c.clientName === clientName);
+      if (clientContracts.length > 0) {
+        // Stopped if ALL of the client's contracts are stopped in the DB
+        return clientContracts.every((c) => c.contractStatus === "stopped");
+      }
+      // Fallback: optimistic local set (e.g. new contract not yet in cache)
+      return stoppedClients.has(clientName);
+    },
+    [qc, stoppedClients]
   );
 
   // ── Stop / reactivate individual CONTRACT ─────────────────────────────────────
@@ -123,9 +136,18 @@ export function ClientProvider({ children }: { children: ReactNode }) {
     patchStatusMutation.mutate({ id: contractId, contractStatus: "active" });
   }, [patchStatusMutation]);
 
+  // isContractStopped: same pattern — cache first, local Set as fallback.
   const isContractStopped = useCallback(
-    (contractId: string) => stoppedContracts.has(contractId),
-    [stoppedContracts]
+    (contractId: string) => {
+      const cached = qc.getQueryData<Contract[]>(["contracts"]) ?? [];
+      const contract = cached.find((c) => c.id === contractId);
+      if (contract) {
+        return contract.contractStatus === "stopped";
+      }
+      // Fallback: optimistic local set
+      return stoppedContracts.has(contractId);
+    },
+    [qc, stoppedContracts]
   );
 
   // ── Promises ──────────────────────────────────────────────────────────────────
@@ -261,7 +283,6 @@ export function ClientProvider({ children }: { children: ReactNode }) {
     // Hit backend
     createContractMutation.mutate({
       ...contract,
-      // REPLACE with:
       renewalSchedule: (contract.renewalSchedule ?? []) as any,
     });
   }, [createContractMutation]);

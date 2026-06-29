@@ -2,6 +2,7 @@
 import { Contract, ClientNote, ContractEdit } from "@/types";
 import { Modal } from "@/components/ui/Modal";
 import { useClient } from "@/lib/client-context";
+import { useAuth } from "@/lib/auth-context";
 import { StatusBadge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { formatCurrency, getMonthShort, SALESPERSON_COLORS } from "@/lib/utils";
@@ -10,10 +11,11 @@ import {
   User, Package, CalendarDays, IndianRupee, CreditCard,
   Ban, RefreshCw, AlertTriangle, CheckCircle2, Clock,
   FileText, ChevronUp, MessageSquare, Plus, Send, Trash2,
-  Pencil, X, History, PauseCircle, PlayCircle,
+  Pencil, X, History, PauseCircle, PlayCircle, AlertCircle,
 } from "lucide-react";
 import { useState } from "react";
 import { PaymentStatus } from "@/types";
+import { usePromises, useDeletePromise } from "@/lib/api";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const ACCOUNT_MANAGERS = [
@@ -63,71 +65,50 @@ function ContractEditForm({ contract, onSave, onCancel }: ContractEditFormProps)
   return (
     <div className="border border-accent-border bg-accent-light/20 rounded-xl p-4 space-y-4">
       <p className="text-xs font-semibold text-accent uppercase tracking-wide">Editing Contract</p>
-
       <div className="grid grid-cols-2 gap-3">
-        {/* Product */}
         <div className="col-span-2">
           <label className={labelCls}>Service / Product</label>
-          <select value={product} onChange={(e) => setProduct(e.target.value)}
-            className={inputCls}>
+          <select value={product} onChange={(e) => setProduct(e.target.value)} className={inputCls}>
             {PRODUCTS.map((p) => <option key={p} value={p}>{p}</option>)}
           </select>
         </div>
-
-        {/* Deal Value */}
         <div>
           <label className={labelCls}>Deal Value (₹)</label>
           <div className="relative">
             <IndianRupee className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
-            <input type="number" value={dealValue} onChange={(e) => setDealValue(e.target.value)}
-              className={cn(inputCls, "pl-7")} />
+            <input type="number" value={dealValue} onChange={(e) => setDealValue(e.target.value)} className={cn(inputCls, "pl-7")} />
           </div>
         </div>
-
-        {/* Account Manager */}
         <div>
           <label className={labelCls}>Account Manager</label>
           <select value={am} onChange={(e) => setAm(e.target.value)} className={inputCls}>
             {ACCOUNT_MANAGERS.map((m) => <option key={m} value={m}>{m}</option>)}
           </select>
         </div>
-
-        {/* Term */}
         <div>
           <label className={labelCls}>Contract Term (months)</label>
-          <input type="number" min={1} max={36} value={term}
-            onChange={(e) => setTerm(e.target.value)} className={inputCls} />
+          <input type="number" min={1} max={36} value={term} onChange={(e) => setTerm(e.target.value)} className={inputCls} />
         </div>
-
-        {/* Profiles */}
         <div>
           <label className={labelCls}>Profiles</label>
-          <input type="number" min={1} value={profiles}
-            onChange={(e) => setProfiles(e.target.value)} className={inputCls} />
+          <input type="number" min={1} value={profiles} onChange={(e) => setProfiles(e.target.value)} className={inputCls} />
         </div>
-
-        {/* GST */}
         <div>
           <label className={labelCls}>GST Registered</label>
           <div className="flex gap-2 mt-1">
             {(["Y", "N"] as const).map((v) => (
               <button key={v} type="button" onClick={() => setGst(v)}
                 className={cn("flex-1 py-1.5 text-sm font-semibold rounded-lg border-2 transition-all",
-                  gst === v
-                    ? "border-accent bg-accent-light text-accent"
-                    : "border-slate-200 text-slate-500 hover:border-slate-300")}>
+                  gst === v ? "border-accent bg-accent-light text-accent" : "border-slate-200 text-slate-500 hover:border-slate-300")}>
                 {v === "Y" ? "Yes" : "No"}
               </button>
             ))}
           </div>
         </div>
       </div>
-
       <div className="flex items-center justify-end gap-2 pt-1 border-t border-slate-100">
         <Button variant="ghost" size="sm" onClick={onCancel}>Cancel</Button>
-        <Button size="sm" onClick={handleSave}>
-          <CheckCircle2 className="w-3.5 h-3.5" /> Save Changes
-        </Button>
+        <Button size="sm" onClick={handleSave}><CheckCircle2 className="w-3.5 h-3.5" /> Save Changes</Button>
       </div>
     </div>
   );
@@ -135,36 +116,24 @@ function ContractEditForm({ contract, onSave, onCancel }: ContractEditFormProps)
 
 // ─── Add Service Form ─────────────────────────────────────────────────────────
 interface AddServiceFormProps {
-  clientName: string;
-  salesperson: string;
+  clientName: string; salesperson: string;
   onSave: (contract: Omit<Contract, "id" | "renewalSchedule" | "createdAt" | "updatedAt">) => void;
   onCancel: () => void;
 }
 
 function AddServiceForm({ clientName, salesperson, onSave, onCancel }: AddServiceFormProps) {
-  const [product,    setProduct]    = useState("GMB Single");
-  const [dealValue,  setDealValue]  = useState("");
-  const [am,         setAm]         = useState("Khushi");
-  const [contractId, setContractId] = useState("");
-  const [term,       setTerm]       = useState("3");
-  const [profiles,   setProfiles]   = useState("1");
-  const [gst,        setGst]        = useState<"Y"|"N">("N");
+  const [product,      setProduct]      = useState("GMB Single");
+  const [dealValue,    setDealValue]    = useState("");
+  const [am,           setAm]           = useState("Khushi");
+  const [contractId,   setContractId]   = useState("");
+  const [term,         setTerm]         = useState("3");
+  const [profiles,     setProfiles]     = useState("1");
+  const [gst,          setGst]          = useState<"Y"|"N">("N");
   const [firstRenewal, setFirstRenewal] = useState("");
 
   function handleSave() {
     if (!dealValue || !firstRenewal) return;
-    onSave({
-      salesperson:          salesperson as any,
-      clientName,
-      product,
-      accountManager:       am,
-      contractId:           contractId || undefined,
-      profiles:             Number(profiles),
-      gstStatus:            gst,
-      dealValue:            Number(dealValue),
-      contractTermMonths:   Number(term),
-      firstRenewalDate:     firstRenewal,
-    });
+    onSave({ salesperson: salesperson as any, clientName, product, accountManager: am, contractId: contractId || undefined, profiles: Number(profiles), gstStatus: gst, dealValue: Number(dealValue), contractTermMonths: Number(term), firstRenewalDate: firstRenewal });
   }
 
   const inputCls = "w-full px-3 py-2 h-9 text-sm bg-white border border-slate-200 rounded-lg focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/20 text-slate-700";
@@ -174,7 +143,6 @@ function AddServiceForm({ clientName, salesperson, onSave, onCancel }: AddServic
   return (
     <div className="border border-emerald-200 bg-accent-greenLight/30 rounded-xl p-4 space-y-4">
       <p className="text-xs font-semibold text-accent-green uppercase tracking-wide">Add New Service</p>
-
       <div className="grid grid-cols-2 gap-3">
         <div className="col-span-2">
           <label className={labelCls}>Service / Product</label>
@@ -182,68 +150,51 @@ function AddServiceForm({ clientName, salesperson, onSave, onCancel }: AddServic
             {PRODUCTS.map((p) => <option key={p} value={p}>{p}</option>)}
           </select>
         </div>
-
         <div>
           <label className={labelCls}>Deal Value (₹) *</label>
           <div className="relative">
             <IndianRupee className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
-            <input type="number" value={dealValue} onChange={(e) => setDealValue(e.target.value)}
-              placeholder="e.g. 59000" className={cn(inputCls, "pl-7")} />
+            <input type="number" value={dealValue} onChange={(e) => setDealValue(e.target.value)} placeholder="e.g. 59000" className={cn(inputCls, "pl-7")} />
           </div>
         </div>
-
         <div>
           <label className={labelCls}>Account Manager</label>
           <select value={am} onChange={(e) => setAm(e.target.value)} className={inputCls}>
             {ACCOUNT_MANAGERS.map((m) => <option key={m} value={m}>{m}</option>)}
           </select>
         </div>
-
         <div>
           <label className={labelCls}>Contract Term (months)</label>
-          <input type="number" min={1} max={36} value={term}
-            onChange={(e) => setTerm(e.target.value)} className={inputCls} />
+          <input type="number" min={1} max={36} value={term} onChange={(e) => setTerm(e.target.value)} className={inputCls} />
         </div>
-
         <div>
           <label className={labelCls}>First Renewal Date *</label>
-          <input type="date" value={firstRenewal} onChange={(e) => setFirstRenewal(e.target.value)}
-            className={inputCls} />
+          <input type="date" value={firstRenewal} onChange={(e) => setFirstRenewal(e.target.value)} className={inputCls} />
         </div>
-
         <div>
           <label className={labelCls}>Profiles</label>
-          <input type="number" min={1} value={profiles}
-            onChange={(e) => setProfiles(e.target.value)} className={inputCls} />
+          <input type="number" min={1} value={profiles} onChange={(e) => setProfiles(e.target.value)} className={inputCls} />
         </div>
-
         <div>
           <label className={labelCls}>Contract ID (optional)</label>
-          <input type="text" value={contractId} onChange={(e) => setContractId(e.target.value)}
-            placeholder="e.g. 14999" className={inputCls} />
+          <input type="text" value={contractId} onChange={(e) => setContractId(e.target.value)} placeholder="e.g. 14999" className={inputCls} />
         </div>
-
         <div>
           <label className={labelCls}>GST Registered</label>
           <div className="flex gap-2 mt-1">
             {(["Y", "N"] as const).map((v) => (
               <button key={v} type="button" onClick={() => setGst(v)}
                 className={cn("flex-1 py-1.5 text-sm font-semibold rounded-lg border-2 transition-all",
-                  gst === v
-                    ? "border-accent-green bg-accent-greenLight text-accent-green"
-                    : "border-slate-200 text-slate-500 hover:border-slate-300")}>
+                  gst === v ? "border-accent-green bg-accent-greenLight text-accent-green" : "border-slate-200 text-slate-500 hover:border-slate-300")}>
                 {v === "Y" ? "Yes" : "No"}
               </button>
             ))}
           </div>
         </div>
       </div>
-
       <div className="flex items-center justify-end gap-2 pt-1 border-t border-slate-100">
         <Button variant="ghost" size="sm" onClick={onCancel}>Cancel</Button>
-        <Button size="sm" onClick={handleSave} disabled={!isValid} variant="success">
-          <Plus className="w-3.5 h-3.5" /> Add Service
-        </Button>
+        <Button size="sm" onClick={handleSave} disabled={!isValid} variant="success"><Plus className="w-3.5 h-3.5" /> Add Service</Button>
       </div>
     </div>
   );
@@ -278,10 +229,10 @@ function InlinePaymentForm({ contractId, clientName, renewalYear, renewalMonth, 
     setPaymentType(type);
     if (type === "full") setAmount(String(outstanding)); else setAmount("");
   }
-  const entered = Number(amount) || 0;
-  const effectiveFullAmount    = editingAmount && Number(overrideAmount) > 0 ? Number(overrideAmount) : fullAmount;
-  const effectiveOutstanding   = effectiveFullAmount - paidSoFar;
-  const remaining              = effectiveOutstanding - entered;
+  const entered              = Number(amount) || 0;
+  const effectiveFullAmount  = editingAmount && Number(overrideAmount) > 0 ? Number(overrideAmount) : fullAmount;
+  const effectiveOutstanding = effectiveFullAmount - paidSoFar;
+  const remaining            = effectiveOutstanding - entered;
   function updatePromiseRow(idx: number, field: keyof PromiseRow, value: string) {
     setPromiseRows((prev) => prev.map((row, i) => i === idx ? { ...row, [field]: value } : row));
   }
@@ -313,7 +264,6 @@ function InlinePaymentForm({ contractId, clientName, renewalYear, renewalMonth, 
   return (
     <div className="mt-2 border border-accent-border bg-accent-light/20 rounded-xl p-4 space-y-4">
       <p className="text-xs font-semibold text-accent uppercase tracking-wide">Record Payment</p>
-      {/* STEP 1 */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <div>
@@ -344,7 +294,6 @@ function InlinePaymentForm({ contractId, clientName, renewalYear, renewalMonth, 
         )}
       </div>
       <div className="border-t border-slate-100" />
-      {/* STEP 2 */}
       <div className="space-y-3">
         <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">Step 2 — Payment Collected</p>
         <div className="grid grid-cols-2 gap-2">
@@ -391,7 +340,6 @@ function InlinePaymentForm({ contractId, clientName, renewalYear, renewalMonth, 
           </div>
         </div>
       </div>
-      {/* STEP 3 */}
       {paymentType==="partial" && (
         <>
           <div className="border-t border-slate-100" />
@@ -487,16 +435,19 @@ interface ClientDetailModalProps {
 }
 
 export function ClientDetailModal({ open, onClose, contracts, onMarkPayment, isStopped=false, onStop, onReactivate }: ClientDetailModalProps) {
-  const [showStopConfirm, setShowStopConfirm] = useState(false);
-  const [activePayment,   setActivePayment]   = useState<string|null>(null);
-  const [newNoteText,     setNewNoteText]     = useState("");
-  const [addingNote,      setAddingNote]      = useState(false);
-  const [savingNote,      setSavingNote]      = useState(false);
-  const [editMode,        setEditMode]        = useState(false);
+  const [showStopConfirm,   setShowStopConfirm]   = useState(false);
+  const [activePayment,     setActivePayment]     = useState<string|null>(null);
+  const [newNoteText,       setNewNoteText]       = useState("");
+  const [addingNote,        setAddingNote]        = useState(false);
+  const [savingNote,        setSavingNote]        = useState(false);
+  const [editMode,          setEditMode]          = useState(false);
   const [editingContractId, setEditingContractId] = useState<string|null>(null);
-  const [addingService,   setAddingService]   = useState(false);
+  const [addingService,     setAddingService]     = useState(false);
+  const [deletingPromise,   setDeletingPromise]   = useState<string|null>(null);
 
   if (!contracts.length) return null;
+
+  const { canPerform } = useAuth();
 
   const {
     addNote, getNotesForClient, getOnboardingPayment, getEffectiveAmount, recordPayment,
@@ -504,8 +455,21 @@ export function ClientDetailModal({ open, onClose, contracts, onMarkPayment, isS
     addContract, getContractEdits, getEffectiveContract,
   } = useClient();
 
+  // Pull live promises from backend so we can show + delete them
+  const { data: allPromises = [] } = usePromises();
+  const deletePromiseMutation = useDeletePromise();
+
+  const canEdit      = canPerform("edit_client");
+  const canStop      = canPerform("stop_client");
+  const canPay       = canPerform("record_payment");
+  const canAddClient = canPerform("add_client");
+
   const clientNotes       = getNotesForClient(contracts[0]?.clientName ?? "");
   const onboardingPayment = getOnboardingPayment(contracts[0]?.clientName ?? "");
+
+  // Promises scoped to this client's contracts
+  const contractIds = new Set(contracts.map((c) => c.id));
+  const clientPromises = allPromises.filter((p) => contractIds.has(p.contractId));
 
   async function handleAddNote() {
     if (!newNoteText.trim()) return;
@@ -513,6 +477,13 @@ export function ClientDetailModal({ open, onClose, contracts, onMarkPayment, isS
     await new Promise((r) => setTimeout(r, 300));
     addNote({ id:`note-${Date.now()}`, clientName:primary.clientName, text:newNoteText.trim(), createdAt:new Date().toISOString(), createdBy:"Management" });
     setNewNoteText(""); setAddingNote(false); setSavingNote(false);
+  }
+
+  function handleDeletePromise(promiseId: string) {
+    setDeletingPromise(promiseId);
+    deletePromiseMutation.mutate(promiseId, {
+      onSettled: () => setDeletingPromise(null),
+    });
   }
 
   const primary    = contracts[0];
@@ -542,7 +513,7 @@ export function ClientDetailModal({ open, onClose, contracts, onMarkPayment, isS
     const newContract: Contract = {
       ...data,
       id:              `c-new-${Date.now()}`,
-      renewalSchedule: [],   // backend will compute; for now empty
+      renewalSchedule: [],
       createdAt:       new Date().toISOString(),
       updatedAt:       new Date().toISOString(),
     };
@@ -567,9 +538,11 @@ export function ClientDetailModal({ open, onClose, contracts, onMarkPayment, isS
               <p className="text-sm font-semibold text-accent-red">Client Stopped</p>
               <p className="text-xs text-red-400 mt-0.5">This client has opted out of renewals.</p>
             </div>
-            <Button variant="secondary" size="sm" onClick={() => onReactivate?.(primary.clientName)}>
-              <RefreshCw className="w-3.5 h-3.5"/> Reactivate
-            </Button>
+            {canStop && (
+              <Button variant="secondary" size="sm" onClick={() => onReactivate?.(primary.clientName)}>
+                <RefreshCw className="w-3.5 h-3.5"/> Reactivate
+              </Button>
+            )}
           </div>
         )}
 
@@ -591,32 +564,27 @@ export function ClientDetailModal({ open, onClose, contracts, onMarkPayment, isS
           ))}
         </div>
 
-        {/* Contracts section — with edit toggle */}
+        {/* Contracts section */}
         <div>
           <div className="flex items-center justify-between mb-3">
             <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-widest">Contracts</p>
-            <button
-              onClick={() => { setEditMode((v)=>!v); setEditingContractId(null); setAddingService(false); }}
-              className={cn("flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border transition-all",
-                editMode
-                  ? "bg-slate-100 text-slate-600 border-slate-200"
-                  : "bg-white text-accent border-accent-border hover:bg-accent-light/30")}>
-              {editMode ? <><X className="w-3 h-3"/> Done Editing</> : <><Pencil className="w-3 h-3"/> Edit Services</>}
-            </button>
+            {canEdit && (
+              <button
+                onClick={() => { setEditMode((v)=>!v); setEditingContractId(null); setAddingService(false); }}
+                className={cn("flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border transition-all",
+                  editMode ? "bg-slate-100 text-slate-600 border-slate-200" : "bg-white text-accent border-accent-border hover:bg-accent-light/30")}>
+                {editMode ? <><X className="w-3 h-3"/> Done Editing</> : <><Pencil className="w-3 h-3"/> Edit Services</>}
+              </button>
+            )}
           </div>
-
           <div className="space-y-2">
             {contracts.map((c) => {
               const effective    = getEffectiveContract(c);
               const isEditing    = editingContractId === c.id;
               const isSvcStopped = isContractStopped(c.id);
               const edits        = getContractEdits(c.id);
-
               return (
-                <div key={c.id} className={cn("border rounded-xl overflow-hidden transition-all",
-                  isSvcStopped ? "border-red-200 opacity-60" : "border-slate-200")}>
-
-                  {/* Contract header row */}
+                <div key={c.id} className={cn("border rounded-xl overflow-hidden transition-all", isSvcStopped ? "border-red-200 opacity-60" : "border-slate-200")}>
                   <div className={cn("p-3", isSvcStopped ? "bg-accent-redLight/30" : "bg-slate-50")}>
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-2 min-w-0">
@@ -631,13 +599,15 @@ export function ClientDetailModal({ open, onClose, contracts, onMarkPayment, isS
                       </div>
                       <div className="flex items-center gap-2 flex-shrink-0">
                         <span className="text-sm font-bold text-slate-700">{formatCurrency(effective.dealValue)}</span>
-                        {editMode && (
+                        {editMode && canEdit && (
                           <div className="flex items-center gap-1">
                             {isSvcStopped ? (
-                              <button onClick={()=>reactivateContract(c.id)}
-                                className="flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-lg border border-accent-green text-accent-green bg-accent-greenLight hover:bg-emerald-100 transition-all">
-                                <PlayCircle className="w-3 h-3"/> Reactivate
-                              </button>
+                              canStop && (
+                                <button onClick={()=>reactivateContract(c.id)}
+                                  className="flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-lg border border-accent-green text-accent-green bg-accent-greenLight hover:bg-emerald-100 transition-all">
+                                  <PlayCircle className="w-3 h-3"/> Reactivate
+                                </button>
+                              )
                             ) : (
                               <>
                                 <button onClick={()=>setEditingContractId(isEditing?null:c.id)}
@@ -645,27 +615,27 @@ export function ClientDetailModal({ open, onClose, contracts, onMarkPayment, isS
                                     isEditing?"bg-slate-100 text-slate-500 border-slate-200":"bg-accent text-white border-accent hover:bg-accent-hover shadow-sm")}>
                                   {isEditing?<><X className="w-3 h-3"/>Cancel</>:<><Pencil className="w-3 h-3"/>Edit</>}
                                 </button>
-                                <button onClick={()=>stopContract(c.id)}
-                                  className="flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-lg border border-red-200 text-accent-red bg-accent-redLight hover:bg-red-100 transition-all">
-                                  <PauseCircle className="w-3 h-3"/> Stop
-                                </button>
+                                {canStop && (
+                                  <button onClick={()=>stopContract(c.id)}
+                                    className="flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-lg border border-red-200 text-accent-red bg-accent-redLight hover:bg-red-100 transition-all">
+                                    <PauseCircle className="w-3 h-3"/> Stop
+                                  </button>
+                                )}
                               </>
                             )}
                           </div>
                         )}
                       </div>
                     </div>
-
-                    {/* Contract details grid */}
                     {!isEditing && (
                       <div className="grid grid-cols-3 gap-2 text-xs">
                         {[
-                          ["Contract ID",   effective.contractId||"—"],
-                          ["Term",          `${effective.contractTermMonths} months`],
-                          ["GST",           effective.gstStatus==="Y"?"Registered":"Not registered"],
-                          ["Profiles",      String(effective.profiles)],
-                          ["Account Mgr",   effective.accountManager],
-                          ["Renewals",      `${c.renewalSchedule.length} months`],
+                          ["Contract ID", effective.contractId||"—"],
+                          ["Term",        `${effective.contractTermMonths} months`],
+                          ["GST",         effective.gstStatus==="Y"?"Registered":"Not registered"],
+                          ["Profiles",    String(effective.profiles)],
+                          ["Account Mgr", effective.accountManager],
+                          ["Renewals",    `${c.renewalSchedule.length} months`],
                         ].map(([label, value]) => (
                           <div key={label}>
                             <span className="text-slate-400">{label}</span>
@@ -675,19 +645,11 @@ export function ClientDetailModal({ open, onClose, contracts, onMarkPayment, isS
                       </div>
                     )}
                   </div>
-
-                  {/* Inline edit form */}
-                  {isEditing && (
+                  {isEditing && canEdit && (
                     <div className="p-3 border-t border-slate-200">
-                      <ContractEditForm
-                        contract={effective}
-                        onSave={(changes) => handleEditSave(c.id, c, changes)}
-                        onCancel={() => setEditingContractId(null)}
-                      />
+                      <ContractEditForm contract={effective} onSave={(changes) => handleEditSave(c.id, c, changes)} onCancel={() => setEditingContractId(null)} />
                     </div>
                   )}
-
-                  {/* Edit history */}
                   {edits.length > 0 && !isEditing && editMode && (
                     <div className="px-3 pb-3 border-t border-slate-100 pt-2">
                       <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-1.5 flex items-center gap-1">
@@ -710,9 +672,7 @@ export function ClientDetailModal({ open, onClose, contracts, onMarkPayment, isS
               );
             })}
           </div>
-
-          {/* Add service */}
-          {editMode && (
+          {editMode && canAddClient && (
             <div className="mt-3">
               {!addingService ? (
                 <button onClick={()=>setAddingService(true)}
@@ -720,12 +680,7 @@ export function ClientDetailModal({ open, onClose, contracts, onMarkPayment, isS
                   <Plus className="w-4 h-4"/> Add New Service
                 </button>
               ) : (
-                <AddServiceForm
-                  clientName={primary.clientName}
-                  salesperson={primary.salesperson}
-                  onSave={handleAddService}
-                  onCancel={()=>setAddingService(false)}
-                />
+                <AddServiceForm clientName={primary.clientName} salesperson={primary.salesperson} onSave={handleAddService} onCancel={()=>setAddingService(false)} />
               )}
             </div>
           )}
@@ -761,22 +716,28 @@ export function ClientDetailModal({ open, onClose, contracts, onMarkPayment, isS
 
         {/* Renewal timeline */}
         <div>
-          <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-widest mb-3">Renewal Timeline — click Pay on any due renewal</p>
+          <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-widest mb-3">
+            Renewal Timeline{canPay ? " — click Pay on any due renewal" : ""}
+          </p>
           <div className="space-y-5">
             {Object.entries(byYear).map(([year, renewals]) => (
               <div key={year}>
                 <p className="text-xs font-semibold text-slate-500 mb-2">{year}</p>
                 <div className="space-y-1.5">
                   {renewals.map((r) => {
-                    const key       = `${r.contract.id}-${r.year}-${r.month}`;
-                    const isActive  = activePayment===key;
-                    const paidSoFar = r.payments.reduce((a,p)=>a+p.amount,0);
-                    const canPay    = !isStopped && !isContractStopped(r.contract.id) && r.status!=="collected" && r.status!=="waived";
+                    const key        = `${r.contract.id}-${r.year}-${r.month}`;
+                    const isActive   = activePayment===key;
+                    const paidSoFar  = r.payments.reduce((a,p)=>a+p.amount,0);
+                    const canPayThis = canPay && !isStopped && !isContractStopped(r.contract.id) && r.status!=="collected" && r.status!=="waived";
                     const effectiveC = getEffectiveContract(r.contract);
-                    const baseAmount = effectiveC.dealValue !== r.contract.dealValue && r.amount > 0
-                      ? effectiveC.dealValue
-                      : r.amount;
-                    const effAmount = getEffectiveAmount(r.contract.id, r.year, r.month, baseAmount);
+                    const baseAmount = effectiveC.dealValue !== r.contract.dealValue && r.amount > 0 ? effectiveC.dealValue : r.amount;
+                    const effAmount  = getEffectiveAmount(r.contract.id, r.year, r.month, baseAmount);
+
+                    // Promises for this specific contract/month
+                    const monthPromises = clientPromises.filter(
+                      (p) => p.contractId === r.contract.id && p.renewalYear === r.year && p.renewalMonth === r.month
+                    );
+
                     return (
                       <div key={key}>
                         <div className={cn("flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl border transition-all",
@@ -800,7 +761,7 @@ export function ClientDetailModal({ open, onClose, contracts, onMarkPayment, isS
                               {paidSoFar>0 && paidSoFar<effAmount && <p className="text-[10px] text-accent-green">Paid: {formatCurrency(paidSoFar)}</p>}
                             </div>
                             <StatusBadge status={r.status} size="sm" />
-                            {canPay && (
+                            {canPayThis && (
                               <button onClick={()=>setActivePayment(isActive?null:key)}
                                 className={cn("flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-lg border transition-all",
                                   isActive?"bg-slate-100 text-slate-500 border-slate-200":"bg-accent text-white border-accent hover:bg-accent-hover shadow-sm")}>
@@ -812,7 +773,34 @@ export function ClientDetailModal({ open, onClose, contracts, onMarkPayment, isS
                             )}
                           </div>
                         </div>
-                        {isActive && (
+
+                        {/* Promises for this renewal month — with delete */}
+                        {monthPromises.length > 0 && (
+                          <div className="ml-3 mt-1 space-y-1">
+                            {monthPromises.map((promise) => (
+                              <div key={promise.id} className="flex items-center gap-2 px-3 py-1.5 bg-amber-50 border border-amber-200 rounded-lg">
+                                <AlertCircle className="w-3 h-3 text-accent-amber flex-shrink-0" />
+                                <span className="text-[11px] text-amber-700 flex-1">
+                                  Promise: <span className="font-semibold">{formatCurrency(promise.remainingAmount)}</span>
+                                  {" by "}
+                                  <span className="font-semibold">{new Date(promise.promisedDate).toLocaleDateString("en-IN",{day:"numeric",month:"short"})}</span>
+                                  {promise.notes && <span className="text-amber-600 italic"> · {promise.notes}</span>}
+                                </span>
+                                {canEdit && (
+                                  <button
+                                    onClick={() => handleDeletePromise(promise.id)}
+                                    disabled={deletingPromise === promise.id}
+                                    title="Delete promise"
+                                    className="p-1 rounded text-amber-300 hover:text-accent-red hover:bg-accent-redLight transition-all disabled:opacity-40 flex-shrink-0">
+                                    <Trash2 className="w-3 h-3" />
+                                  </button>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {isActive && canPayThis && (
                           <InlinePaymentForm contractId={r.contract.id} clientName={primary.clientName}
                             renewalYear={r.year} renewalMonth={r.month} fullAmount={effAmount} paidSoFar={paidSoFar}
                             onSave={handlePaymentSave} onCancel={()=>setActivePayment(null)} />
@@ -837,11 +825,13 @@ export function ClientDetailModal({ open, onClose, contracts, onMarkPayment, isS
               <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Notes</p>
               {clientNotes.length>0 && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-accent-light text-accent border border-accent-border">{clientNotes.length}</span>}
             </div>
-            <button onClick={()=>setAddingNote((v)=>!v)} className="flex items-center gap-1.5 text-xs font-medium text-accent hover:text-accent-hover transition-colors">
-              <Plus className="w-3.5 h-3.5"/> Add Note
-            </button>
+            {canEdit && (
+              <button onClick={()=>setAddingNote((v)=>!v)} className="flex items-center gap-1.5 text-xs font-medium text-accent hover:text-accent-hover transition-colors">
+                <Plus className="w-3.5 h-3.5"/> Add Note
+              </button>
+            )}
           </div>
-          {addingNote && (
+          {addingNote && canEdit && (
             <div className="px-4 py-3 bg-accent-light/20 border-b border-slate-200 space-y-2">
               <textarea rows={3} placeholder="Type your note here..." value={newNoteText} onChange={(e)=>setNewNoteText(e.target.value)} autoFocus
                 className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/10 text-slate-700 placeholder:text-slate-400 resize-none" />
@@ -856,7 +846,7 @@ export function ClientDetailModal({ open, onClose, contracts, onMarkPayment, isS
           )}
           <div className="divide-y divide-slate-100">
             {clientNotes.length===0 ? (
-              <div className="px-4 py-6 text-center"><MessageSquare className="w-6 h-6 text-slate-300 mx-auto mb-2"/><p className="text-xs text-slate-400">No notes yet — add the first one</p></div>
+              <div className="px-4 py-6 text-center"><MessageSquare className="w-6 h-6 text-slate-300 mx-auto mb-2"/><p className="text-xs text-slate-400">No notes yet{canEdit ? " — add the first one" : ""}</p></div>
             ) : (
               [...clientNotes].reverse().map((note) => (
                 <div key={note.id} className="px-4 py-3">
@@ -872,7 +862,7 @@ export function ClientDetailModal({ open, onClose, contracts, onMarkPayment, isS
         </div>
 
         {/* Stop client */}
-        {!isStopped && (
+        {!isStopped && canStop && (
           <div className="border border-slate-200 rounded-xl p-4">
             <div className="flex items-start justify-between gap-4">
               <div>

@@ -1,6 +1,6 @@
 "use client";
 import { useState, useMemo } from "react";
-import { getRenewalsForMonth } from "@/lib/mock-data";
+import { useContracts } from "@/lib/api";
 import { formatCurrency, SALESPERSON_COLORS } from "@/lib/utils";
 import { Table, THead, Th, TBody, Tr, Td } from "@/components/ui/Table";
 import { StatusBadge } from "@/components/ui/Badge";
@@ -16,7 +16,7 @@ interface RenewalTableProps {
   year: number;
   month: number;
   onMarkPayment: (contractId: string, renewalYear: number, renewalMonth: number) => void;
-  salesperson?: string; // ← added
+  salesperson?: string;
 }
 
 const SALESPERSONS = ["All", "Aftab", "Sarvesh", "Firoz", "Idris", "Prajay", "Vinay"];
@@ -35,12 +35,21 @@ export function RenewalTable({ year, month, onMarkPayment, salesperson }: Renewa
   const [sortKey,      setSortKey]      = useState<SortKey>("amount");
   const [sortDir,      setSortDir]      = useState<SortDir>("desc");
 
-  // If salesperson is locked (employee login), pass it directly to the data fetch
-  const raw = getRenewalsForMonth(year, month, salesperson);
+  // Pull live data from API cache — replaces getRenewalsForMonth() from mock-data
+  const { data: contracts = [], isLoading } = useContracts();
+
+  const raw = useMemo(() => {
+    return contracts.flatMap((c) => {
+      // If locked to a salesperson (employee login), filter here
+      if (salesperson && c.salesperson !== salesperson) return [];
+      return (c.renewalSchedule ?? [])
+        .filter((r) => r.year === year && r.month === month)
+        .map((r) => ({ contract: c, renewal: r }));
+    });
+  }, [contracts, year, month, salesperson]);
 
   const rows = useMemo(() => {
     let data = raw;
-    // Only apply internal exec filter if not locked to a salesperson
     if (!salesperson && execFilter !== "All") data = data.filter((r) => r.contract.salesperson === execFilter);
     if (statusFilter !== "all") data = data.filter((r) => r.renewal.status === statusFilter);
     if (search.trim()) data = data.filter((r) =>
@@ -61,8 +70,14 @@ export function RenewalTable({ year, month, onMarkPayment, salesperson }: Renewa
   }, [raw, salesperson, execFilter, statusFilter, search, sortKey, sortDir]);
 
   const totalExpected  = rows.reduce((a, r) => a + r.renewal.amount, 0);
-  const totalCollected = rows.reduce((a, r) => a + (r.renewal.status === "collected" ? r.renewal.amount : r.renewal.status === "partial" ? Math.floor(r.renewal.amount * 0.6) : 0), 0);
-  const countByStatus  = {
+  const totalCollected = rows.reduce((a, r) => {
+    if (r.renewal.status === "collected") return a + r.renewal.amount;
+    if (r.renewal.status === "partial") {
+      return a + (r.renewal.payments ?? []).reduce((s, p) => s + p.amount, 0);
+    }
+    return a;
+  }, 0);
+  const countByStatus = {
     collected: rows.filter((r) => r.renewal.status === "collected").length,
     partial:   rows.filter((r) => r.renewal.status === "partial").length,
     pending:   rows.filter((r) => r.renewal.status === "pending").length,
@@ -76,6 +91,14 @@ export function RenewalTable({ year, month, onMarkPayment, salesperson }: Renewa
   function SortIcon({ k }: { k: SortKey }) {
     if (sortKey !== k) return <ChevronDown className="w-3 h-3 text-slate-300" />;
     return sortDir === "asc" ? <ChevronUp className="w-3 h-3 text-accent" /> : <ChevronDown className="w-3 h-3 text-accent" />;
+  }
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-48 text-slate-400 text-sm">
+        Loading renewals…
+      </div>
+    );
   }
 
   return (

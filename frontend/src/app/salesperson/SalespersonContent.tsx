@@ -6,11 +6,12 @@ import { ExecSelector } from "@/components/salesperson/ExecSelector";
 import { ExecStats } from "@/components/salesperson/ExecStats";
 import { ExecChart } from "@/components/salesperson/ExecChart";
 import { ExecContractTable } from "@/components/salesperson/ExecContractTable";
-import { PaymentModal } from "@/components/renewals/PaymentModal";
+import { PaymentModal, PaymentPromise } from "@/components/renewals/PaymentModal";
 import { SALESPERSON_COLORS } from "@/lib/utils";
-import { getContractsForSalesperson } from "@/lib/mock-data";
+import { useContracts } from "@/lib/api";
 import { exportSalespersonExcel } from "@/lib/export";
 import { useAuth } from "@/lib/auth-context";
+import { useClient } from "@/lib/client-context";
 import { Download, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -19,6 +20,7 @@ interface PaymentTarget { contractId: string; year: number; month: number; }
 export default function SalespersonContent() {
   const searchParams = useSearchParams();
   const { user, canPerform } = useAuth();
+  const { recordPayment } = useClient();
   const [exec,          setExec]          = useState("Aftab");
   const [paymentTarget, setPaymentTarget] = useState<PaymentTarget | null>(null);
   const [exporting,     setExporting]     = useState(false);
@@ -39,14 +41,34 @@ export default function SalespersonContent() {
     setPaymentTarget({ contractId, year, month });
   }
 
+  const { data: allContracts = [] } = useContracts();
+
   async function handleExport() {
     setExporting(true);
     await new Promise((r) => setTimeout(r, 80));
     try {
-      exportSalespersonExcel(exec, getContractsForSalesperson(exec));
+      const contracts = allContracts.filter((c) => c.salesperson === exec);
+      exportSalespersonExcel(exec, contracts);
     } finally {
       setExporting(false);
     }
+  }
+
+  function handlePaymentSave(data: {
+    contractId: string; year: number; month: number;
+    amount: number; status: string; notes: string; paidOn: string;
+    promise?: Omit<PaymentPromise, "id" | "createdAt">;
+  }) {
+    recordPayment({
+      contractId: data.contractId,
+      year:       data.year,
+      month:      data.month,
+      amount:     data.amount,
+      notes:      data.notes,
+      paidOn:     data.paidOn,
+      promises:   data.promise ? [{ date: data.promise.promisedDate, amount: data.promise.remainingAmount, notes: data.promise.notes }] : [],
+    });
+    setPaymentTarget(null);
   }
 
   return (
@@ -93,7 +115,7 @@ export default function SalespersonContent() {
           contractId={paymentTarget.contractId}
           renewalYear={paymentTarget.year}
           renewalMonth={paymentTarget.month}
-          onSave={(data) => console.log("Payment saved:", data)}
+          onSave={handlePaymentSave}
         />
       )}
     </PageWrapper>

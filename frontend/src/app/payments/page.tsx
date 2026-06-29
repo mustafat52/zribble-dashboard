@@ -3,9 +3,10 @@ import { useState } from "react";
 import { PageWrapper } from "@/components/layout/PageWrapper";
 import { PaymentHistory } from "@/components/payments/PaymentHistory";
 import { OutstandingLedger } from "@/components/payments/OutstandingLedger";
-import { PaymentModal } from "@/components/renewals/PaymentModal";
+import { PaymentModal, PaymentPromise } from "@/components/renewals/PaymentModal";
 import { cn } from "@/lib/utils";
 import { Receipt, Clock } from "lucide-react";
+import { useClient } from "@/lib/client-context";
 
 type Tab = "ledger" | "outstanding";
 
@@ -34,12 +35,27 @@ export default function PaymentsPage() {
   const [activeTab,     setActiveTab]     = useState<Tab>("ledger");
   const [paymentTarget, setPaymentTarget] = useState<PaymentTarget | null>(null);
 
+  const { recordPayment } = useClient();
+
   function openPayment(contractId: string, year: number, month: number) {
     setPaymentTarget({ contractId, year, month });
   }
 
-  function handlePaymentSave(data: any) {
-    console.log("Payment saved:", data);
+  function handlePaymentSave(data: {
+    contractId: string; year: number; month: number;
+    amount: number; status: string; notes: string; paidOn: string;
+    promise?: Omit<PaymentPromise, "id" | "createdAt">;
+  }) {
+    recordPayment({
+      contractId: data.contractId,
+      year:       data.year,
+      month:      data.month,
+      amount:     data.amount,
+      notes:      data.notes,
+      paidOn:     data.paidOn,
+      promises:   data.promise ? [{ date: data.promise.promisedDate, amount: data.promise.remainingAmount, notes: data.promise.notes }] : [],
+    });
+    setPaymentTarget(null);
   }
 
   return (

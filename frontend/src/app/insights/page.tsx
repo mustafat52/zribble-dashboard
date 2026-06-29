@@ -1,8 +1,8 @@
 "use client";
 import { useState, useMemo } from "react";
 import { PageWrapper } from "@/components/layout/PageWrapper";
+import { useContracts } from "@/lib/api";
 import { MONTH_COLS, parseMonthCol } from "@/lib/utils";
-import { CONTRACTS } from "@/lib/mock-data";
 import { formatCurrency, SALESPERSON_COLORS } from "@/lib/utils";
 import { ClientLink } from "@/components/clients/ClientLink";
 import { cn } from "@/lib/utils";
@@ -34,8 +34,6 @@ const PRODUCT_COLORS = [
   "#8B5CF6","#0D9488","#F59E0B","#EF4444",
 ];
 
-// Month cols available: Jul-2026 → Dec-2028 (30 months)
-// Build a human-readable list for the picker
 const MONTH_OPTIONS = MONTH_COLS.map((col) => {
   const { year, month } = parseMonthCol(col);
   const label = `${["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][month-1]} ${year}`;
@@ -70,6 +68,7 @@ function AccentToggle({ label, active, onClick }: { label: string; active: boole
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function InsightsPage() {
   const { canPerform } = useAuth();
+  const { data: allContracts = [], isLoading } = useContracts();
 
   const [selExecs,    setSelExecs]    = useState<string[]>([]);
   const [selProducts, setSelProducts] = useState<string[]>([]);
@@ -78,10 +77,8 @@ export default function InsightsPage() {
   const [multiOnly,   setMultiOnly]   = useState(false);
   const [showFilters, setShowFilters] = useState(true);
   const [exporting,   setExporting]   = useState(false);
-
-  // Month range filter — default: full range (Jul 2026 → Dec 2028)
-  const [fromCol, setFromCol] = useState(MONTH_COLS[0]);   // Jul-2026
-  const [toCol,   setToCol]   = useState(MONTH_COLS[MONTH_COLS.length - 1]); // Dec-2028
+  const [fromCol, setFromCol] = useState(MONTH_COLS[0]);
+  const [toCol,   setToCol]   = useState(MONTH_COLS[MONTH_COLS.length - 1]);
 
   const fromIdx = MONTH_COLS.indexOf(fromCol);
   const toIdx   = MONTH_COLS.indexOf(toCol);
@@ -93,15 +90,14 @@ export default function InsightsPage() {
 
   // ── Filtered contracts ────────────────────────────────────────────────────
   const filtered = useMemo(() =>
-    CONTRACTS.filter((c) => {
+    allContracts.filter((c) => {
       if (selExecs.length    && !selExecs.includes(c.salesperson))   return false;
       if (selProducts.length && !selProducts.includes(c.product))    return false;
       if (selAMs.length      && !selAMs.includes(c.accountManager))  return false;
       if (selGST !== "all"   && c.gstStatus !== selGST)             return false;
       return true;
-    }), [selExecs, selProducts, selAMs, selGST]);
+    }), [allContracts, selExecs, selProducts, selAMs, selGST]);
 
-  // ── Client map (all contracts, for overlap detection) ─────────────────────
   const clientMap = useMemo(() => {
     const map: Record<string, typeof filtered> = {};
     filtered.forEach((c) => { if (!map[c.clientName]) map[c.clientName] = []; map[c.clientName].push(c); });
@@ -112,25 +108,21 @@ export default function InsightsPage() {
     Object.entries(clientMap).filter(([, cs]) => !multiOnly || cs.length > 1),
     [clientMap, multiOnly]);
 
-  // ── Month-range filtered pipeline (for charts + KPIs) ────────────────────
-  const filteredWithMonthRange = useMemo(() => {
-    return filtered.map((c) => ({
+  const filteredWithMonthRange = useMemo(() =>
+    filtered.map((c) => ({
       ...c,
-      renewalSchedule: c.renewalSchedule.filter((r) => {
+      renewalSchedule: (c.renewalSchedule ?? []).filter((r) => {
         const col = `${["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][r.month-1]}-${r.year}`;
         return selectedMonthCols.includes(col);
       }),
-    }));
-  }, [filtered, selectedMonthCols]);
+    })), [filtered, selectedMonthCols]);
 
-  // ── Insights ──────────────────────────────────────────────────────────────
   const productFrequency = useMemo(() => {
     const counts: Record<string, { count: number; pipeline: number }> = {};
     filtered.forEach((c) => {
       if (!counts[c.product]) counts[c.product] = { count: 0, pipeline: 0 };
       counts[c.product].count++;
-      // pipeline within month range
-      const rangeValue = c.renewalSchedule
+      const rangeValue = (c.renewalSchedule ?? [])
         .filter((r) => {
           const col = `${["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][r.month-1]}-${r.year}`;
           return selectedMonthCols.includes(col);
@@ -183,7 +175,6 @@ export default function InsightsPage() {
     setFromCol(MONTH_COLS[0]); setToCol(MONTH_COLS[MONTH_COLS.length-1]);
   }
 
-  // ── Export ────────────────────────────────────────────────────────────────
   async function handleExport() {
     setExporting(true);
     await new Promise((r) => setTimeout(r, 80));
@@ -191,23 +182,20 @@ export default function InsightsPage() {
       const today   = new Date();
       const dateStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}-${String(today.getDate()).padStart(2,"0")}`;
       const filename = `ZribbleOS_Insights_${dateStr}.xlsx`;
-
       const headers = [
-        "Client", "Salesperson", "Product", "Account Manager",
-        "Contract ID", "Profiles", "GST", "Deal Value (₹)",
-        "Term (months)", "First Renewal",
-        ...selectedMonthCols,
-        "Range Pipeline (₹)",
+        "Client","Salesperson","Product","Account Manager",
+        "Contract ID","Profiles","GST","Deal Value (₹)",
+        "Term (months)","First Renewal",
+        ...selectedMonthCols,"Range Pipeline (₹)",
       ];
-
       const rows = visibleClients.flatMap(([, cs]) =>
         cs.map((c) => {
           const monthMap: Record<string, number> = {};
-          c.renewalSchedule.forEach((r) => {
+          (c.renewalSchedule ?? []).forEach((r) => {
             const col = `${["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][r.month-1]}-${r.year}`;
             monthMap[col] = r.amount;
           });
-          const monthValues  = selectedMonthCols.map((col) => monthMap[col] ?? 0);
+          const monthValues   = selectedMonthCols.map((col) => monthMap[col] ?? 0);
           const rangePipeline = monthValues.reduce((a, v) => a + v, 0);
           return [
             c.clientName, c.salesperson, c.product, c.accountManager,
@@ -217,68 +205,24 @@ export default function InsightsPage() {
           ];
         })
       );
-
-      // Sort by client name
       rows.sort((a, b) => String(a[0]).localeCompare(String(b[0])));
-
-      // Totals row
-      const totalsRow: (string|number)[] = [
-        "TOTAL", "", "", "", "", "", "",
-        visibleClients.flatMap(([,cs]) => cs).reduce((a,c) => a+c.dealValue, 0),
-        "", "",
-        ...selectedMonthCols.map((col) =>
-          visibleClients.flatMap(([,cs]) => cs).reduce((sum, c) => {
-            const r = c.renewalSchedule.find((r) => {
-              const rCol = `${["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][r.month-1]}-${r.year}`;
-              return rCol === col;
-            });
-            return sum + (r?.amount ?? 0);
-          }, 0)
-        ),
-        totalPipeline,
-      ];
-
-      const wsData = [headers, ...rows, totalsRow];
+      const wsData = [headers, ...rows];
       const ws = XLSX.utils.aoa_to_sheet(wsData);
-
-      // Column widths
       ws["!cols"] = [
-        { wch:30 }, { wch:12 }, { wch:22 }, { wch:14 },
-        { wch:10 }, { wch:8  }, { wch:6  }, { wch:14 },
-        { wch:8  }, { wch:14 },
+        { wch:30 },{ wch:12 },{ wch:22 },{ wch:14 },
+        { wch:10 },{ wch:8 },{ wch:6 },{ wch:14 },
+        { wch:8 },{ wch:14 },
         ...selectedMonthCols.map(() => ({ wch:10 })),
         { wch:16 },
       ];
-      ws["!freeze"] = { xSplit: 0, ySplit: 1 };
-
-      // Filter summary sheet
-      const filterRows = [
-        ["Filter", "Value"],
-        ["Salesperson", selExecs.length ? selExecs.join(", ") : "All"],
-        ["Product",     selProducts.length ? selProducts.join(", ") : "All"],
-        ["Account Manager", selAMs.length ? selAMs.join(", ") : "All"],
-        ["GST Status",  selGST === "all" ? "All" : selGST === "Y" ? "Registered" : "Not Registered"],
-        ["Multi-service only", multiOnly ? "Yes" : "No"],
-        ["Month range", `${MONTH_OPTIONS.find(m => m.col === fromCol)?.label} → ${MONTH_OPTIONS.find(m => m.col === toCol)?.label}`],
-        [""],
-        ["Total clients",   totalClients],
-        ["Total contracts", totalContracts],
-        ["Range pipeline",  totalPipeline],
-        ["Export date",     dateStr],
-      ];
-      const wsFilter = XLSX.utils.aoa_to_sheet(filterRows);
-      wsFilter["!cols"] = [{ wch: 20 }, { wch: 50 }];
-
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Filtered Data");
-      XLSX.utils.book_append_sheet(wb, wsFilter, "Filter Summary");
       XLSX.writeFile(wb, filename);
     } finally {
       setExporting(false);
     }
   }
 
-  // Auth guard — after all hooks
   if (!canPerform("view_all")) {
     return (
       <PageWrapper>
@@ -293,7 +237,6 @@ export default function InsightsPage() {
 
   return (
     <PageWrapper wide>
-      {/* Header */}
       <div className="mb-6 flex items-start justify-between">
         <div>
           <h2 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
@@ -302,20 +245,12 @@ export default function InsightsPage() {
           <p className="text-xs text-slate-400 mt-0.5">Slice the portfolio any way you need — by exec, service, AM, month range, or overlap.</p>
         </div>
         <div className="flex items-center gap-2">
-          {/* Export button */}
-          <button onClick={handleExport} disabled={exporting}
-            className={cn(
-              "flex items-center gap-2 px-4 py-2 rounded-xl border text-sm font-medium transition-all shadow-card",
-              exporting
-                ? "bg-slate-50 text-slate-400 border-slate-200 cursor-not-allowed"
-                : "bg-white text-slate-600 border-slate-200 hover:border-accent hover:text-accent hover:bg-accent-light/20"
-            )}>
-            {exporting
-              ? <><Loader2 className="w-4 h-4 animate-spin"/> Exporting...</>
-              : <><Download className="w-4 h-4"/> Export Excel</>}
+          <button onClick={handleExport} disabled={exporting || isLoading}
+            className={cn("flex items-center gap-2 px-4 py-2 rounded-xl border text-sm font-medium transition-all shadow-card",
+              exporting ? "bg-slate-50 text-slate-400 border-slate-200 cursor-not-allowed"
+                        : "bg-white text-slate-600 border-slate-200 hover:border-accent hover:text-accent hover:bg-accent-light/20")}>
+            {exporting ? <><Loader2 className="w-4 h-4 animate-spin"/> Exporting...</> : <><Download className="w-4 h-4"/> Export Excel</>}
           </button>
-
-          {/* Filter toggle */}
           <button onClick={() => setShowFilters((v) => !v)}
             className="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-all shadow-card">
             <Filter className="w-4 h-4"/>
@@ -345,13 +280,10 @@ export default function InsightsPage() {
             <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-2 flex items-center gap-1.5">
               <CalendarDays className="w-3 h-3"/> Month Range
             </p>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
               <div>
                 <label className="text-[10px] text-slate-400 block mb-1">From</label>
-                <select value={fromCol} onChange={(e) => {
-                  setFromCol(e.target.value);
-                  if (MONTH_COLS.indexOf(e.target.value) > MONTH_COLS.indexOf(toCol)) setToCol(e.target.value);
-                }}
+                <select value={fromCol} onChange={(e) => { setFromCol(e.target.value); if (MONTH_COLS.indexOf(e.target.value) > MONTH_COLS.indexOf(toCol)) setToCol(e.target.value); }}
                   className="px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg bg-white text-slate-700 focus:outline-none focus:border-accent">
                   {MONTH_OPTIONS.map((m) => <option key={m.col} value={m.col}>{m.label}</option>)}
                 </select>
@@ -359,10 +291,7 @@ export default function InsightsPage() {
               <span className="text-slate-400 text-xs mt-4">→</span>
               <div>
                 <label className="text-[10px] text-slate-400 block mb-1">To</label>
-                <select value={toCol} onChange={(e) => {
-                  setToCol(e.target.value);
-                  if (MONTH_COLS.indexOf(e.target.value) < MONTH_COLS.indexOf(fromCol)) setFromCol(e.target.value);
-                }}
+                <select value={toCol} onChange={(e) => { setToCol(e.target.value); if (MONTH_COLS.indexOf(e.target.value) < MONTH_COLS.indexOf(fromCol)) setFromCol(e.target.value); }}
                   className="px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg bg-white text-slate-700 focus:outline-none focus:border-accent">
                   {MONTH_OPTIONS.map((m) => <option key={m.col} value={m.col}>{m.label}</option>)}
                 </select>
@@ -370,21 +299,12 @@ export default function InsightsPage() {
               <div className="mt-4 px-3 py-1.5 bg-accent-light border border-accent-border rounded-lg">
                 <span className="text-xs font-semibold text-accent">{selectedMonthCols.length} month{selectedMonthCols.length !== 1 ? "s" : ""} selected</span>
               </div>
-              {/* Quick range buttons */}
               <div className="flex gap-1 mt-4">
-                {[
-                  { label:"3m",  from:0, to:2  },
-                  { label:"6m",  from:0, to:5  },
-                  { label:"12m", from:0, to:11 },
-                  { label:"All", from:0, to:29 },
-                ].map(({ label, from, to }) => (
+                {[{ label:"3m", from:0, to:2 },{ label:"6m", from:0, to:5 },{ label:"12m", from:0, to:11 },{ label:"All", from:0, to:29 }].map(({ label, from, to }) => (
                   <button key={label} onClick={() => { setFromCol(MONTH_COLS[from]); setToCol(MONTH_COLS[Math.min(to, MONTH_COLS.length-1)]); }}
-                    className={cn(
-                      "px-2 py-1 rounded-lg text-[11px] font-semibold border transition-all",
+                    className={cn("px-2 py-1 rounded-lg text-[11px] font-semibold border transition-all",
                       fromCol === MONTH_COLS[from] && toCol === MONTH_COLS[Math.min(to, MONTH_COLS.length-1)]
-                        ? "bg-accent text-white border-accent"
-                        : "bg-white text-slate-500 border-slate-200 hover:border-slate-300"
-                    )}>
+                        ? "bg-accent text-white border-accent" : "bg-white text-slate-500 border-slate-200 hover:border-slate-300")}>
                     {label}
                   </button>
                 ))}
@@ -393,41 +313,30 @@ export default function InsightsPage() {
           </div>
 
           <div className="border-t border-slate-100" />
-
-          {/* Salesperson */}
           <div>
             <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-2">Salesperson</p>
             <div className="flex flex-wrap gap-1.5">
               {ALL_SALESPERSONS.map((sp) => (
-                <Toggle key={sp} label={sp} active={selExecs.includes(sp)} color={SALESPERSON_COLORS[sp]}
-                  onClick={() => setSelExecs((v) => toggle(v, sp))} />
+                <Toggle key={sp} label={sp} active={selExecs.includes(sp)} color={SALESPERSON_COLORS[sp]} onClick={() => setSelExecs((v) => toggle(v, sp))} />
               ))}
             </div>
           </div>
-
-          {/* Product */}
           <div>
             <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-2">Service / Product</p>
             <div className="flex flex-wrap gap-1.5">
               {ALL_PRODUCTS.map((p, i) => (
-                <Toggle key={p} label={p} active={selProducts.includes(p)} color={PRODUCT_COLORS[i % PRODUCT_COLORS.length]}
-                  onClick={() => setSelProducts((v) => toggle(v, p))} />
+                <Toggle key={p} label={p} active={selProducts.includes(p)} color={PRODUCT_COLORS[i % PRODUCT_COLORS.length]} onClick={() => setSelProducts((v) => toggle(v, p))} />
               ))}
             </div>
           </div>
-
-          {/* AM */}
           <div>
             <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-2">Account Manager</p>
             <div className="flex flex-wrap gap-1.5">
               {ALL_AMS.map((am) => (
-                <AccentToggle key={am} label={am} active={selAMs.includes(am)}
-                  onClick={() => setSelAMs((v) => toggle(v, am))} />
+                <AccentToggle key={am} label={am} active={selAMs.includes(am)} onClick={() => setSelAMs((v) => toggle(v, am))} />
               ))}
             </div>
           </div>
-
-          {/* GST + Multi */}
           <div className="flex flex-wrap items-center gap-6 pt-1 border-t border-slate-100">
             <div>
               <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-2">GST Status</p>
@@ -458,14 +367,14 @@ export default function InsightsPage() {
       {/* KPIs */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
         {[
-          { label:"Clients",       value:totalClients,                  sub:"matched",                icon:Users,       color:"text-accent",       bg:"bg-accent-light"      },
-          { label:"Contracts",     value:totalContracts,                sub:"services",               icon:Package,     color:"text-accent-cyan",   bg:"bg-accent-cyanLight"  },
-          { label:"Pipeline",      value:formatCurrency(totalPipeline), sub:`${selectedMonthCols.length}m range`, icon:IndianRupee, color:"text-accent-green", bg:"bg-accent-greenLight" },
-          { label:"Multi-Service", value:multiCount,                    sub:"clients w/ 2+ services", icon:Layers,      color:"text-accent-purple", bg:"bg-purple-50"         },
+          { label:"Clients",       value:isLoading?"…":totalClients,                  sub:"matched",                icon:Users,       color:"text-accent",       bg:"bg-accent-light"      },
+          { label:"Contracts",     value:isLoading?"…":totalContracts,                sub:"services",               icon:Package,     color:"text-accent-cyan",   bg:"bg-accent-cyanLight"  },
+          { label:"Pipeline",      value:isLoading?"…":formatCurrency(totalPipeline), sub:`${selectedMonthCols.length}m range`, icon:IndianRupee, color:"text-accent-green", bg:"bg-accent-greenLight" },
+          { label:"Multi-Service", value:isLoading?"…":multiCount,                    sub:"clients w/ 2+ services", icon:Layers,      color:"text-accent-purple", bg:"bg-purple-50"         },
         ].map(({ label, value, sub, icon: Icon, color, bg }) => (
           <div key={label} className="bg-white border border-slate-200 rounded-xl p-4 shadow-card">
             <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center mb-3", bg)}>
-              <Icon className={cn("w-4 h-4", color)}/>
+              <Icon className={cn("w-4 h-4", color)} />
             </div>
             <p className="text-xl font-bold text-slate-800">{value}</p>
             <p className="text-[11px] text-slate-400 mt-0.5 uppercase tracking-wide">{label}</p>
@@ -475,237 +384,238 @@ export default function InsightsPage() {
       </div>
 
       {/* Charts */}
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-5 mb-6">
-        <div className="xl:col-span-2 bg-white border border-slate-200 rounded-2xl p-5 shadow-card">
-          <div className="flex items-center gap-2 mb-4">
-            <Award className="w-4 h-4 text-accent"/>
-            <p className="text-sm font-semibold text-slate-700">Service Popularity</p>
-            <span className="text-[11px] text-slate-400 ml-auto">by contract count</span>
-          </div>
-          {productFrequency.length === 0 ? (
-            <div className="h-48 flex items-center justify-center text-slate-400 text-sm">No data for current filters</div>
-          ) : (
-            <div className="h-52">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={productFrequency} layout="vertical" barSize={14} margin={{ left:8, right:20, top:0, bottom:0 }}>
-                  <XAxis type="number" tick={{ fontSize:10, fill:"#94A3B8" }} axisLine={false} tickLine={false}/>
-                  <YAxis type="category" dataKey="name" tick={{ fontSize:10, fill:"#64748B" }} axisLine={false} tickLine={false} width={130}/>
-                  <Tooltip content={({ active, payload }) => {
-                    if (!active || !payload?.length) return null;
-                    const d = payload[0].payload;
-                    return (
-                      <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-lg text-xs">
-                        <p className="font-semibold text-slate-700 mb-1">{d.name}</p>
-                        <p className="text-slate-500">{d.count} contract{d.count !== 1?"s":""}</p>
-                        <p className="text-accent-green mt-0.5">{formatCurrency(d.pipeline)} pipeline</p>
-                      </div>
-                    );
-                  }} cursor={{ fill:"rgba(79,70,229,0.04)" }}/>
-                  <Bar dataKey="count" radius={[0,4,4,0]}>
-                    {productFrequency.map((_, i) => <Cell key={i} fill={PRODUCT_COLORS[i % PRODUCT_COLORS.length]}/>)}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-        </div>
-
-        <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-card">
-          <div className="flex items-center gap-2 mb-4">
-            <TrendingUp className="w-4 h-4 text-accent-cyan"/>
-            <p className="text-sm font-semibold text-slate-700">Pipeline by AM</p>
-            <span className="text-[10px] text-slate-400 ml-auto">{selectedMonthCols.length}m range</span>
-          </div>
-          {amPipeline.length === 0 ? (
-            <div className="h-48 flex items-center justify-center text-slate-400 text-sm">No data</div>
-          ) : (
-            <>
-              <div className="h-36">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie data={amPipeline} cx="50%" cy="50%" innerRadius={38} outerRadius={58} paddingAngle={2} dataKey="value" strokeWidth={0}>
-                      {amPipeline.map((_, i) => <Cell key={i} fill={PRODUCT_COLORS[i % PRODUCT_COLORS.length]}/>)}
-                    </Pie>
-                    <Tooltip content={({ active, payload }) => {
-                      if (!active || !payload?.length) return null;
-                      const d = payload[0].payload;
-                      return (
-                        <div className="bg-white border border-slate-200 rounded-xl p-2.5 shadow-lg text-xs">
-                          <p className="font-semibold text-slate-700">{d.name}</p>
-                          <p className="text-accent-green mt-0.5">{formatCurrency(d.value)}</p>
-                        </div>
-                      );
-                    }}/>
-                  </PieChart>
-                </ResponsiveContainer>
+      {!isLoading && (
+        <>
+          <div className="grid grid-cols-1 xl:grid-cols-3 gap-5 mb-6">
+            <div className="xl:col-span-2 bg-white border border-slate-200 rounded-2xl p-5 shadow-card">
+              <div className="flex items-center gap-2 mb-4">
+                <Award className="w-4 h-4 text-accent"/>
+                <p className="text-sm font-semibold text-slate-700">Service Popularity</p>
+                <span className="text-[11px] text-slate-400 ml-auto">by contract count</span>
               </div>
-              <div className="space-y-1.5 mt-2">
-                {amPipeline.slice(0,5).map((am, i) => (
-                  <div key={am.name} className="flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: PRODUCT_COLORS[i % PRODUCT_COLORS.length]}}/>
-                    <span className="text-xs text-slate-600 flex-1 truncate">{am.name}</span>
-                    <span className="text-xs font-semibold text-slate-500">{formatCurrency(am.value)}</span>
-                  </div>
-                ))}
-                {amPipeline.length > 5 && <p className="text-[10px] text-slate-400 pl-4">+{amPipeline.length-5} more</p>}
-              </div>
-            </>
-          )}
-        </div>
-      </div>
-
-      {/* Exec breakdown */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-card mb-6">
-        <div className="flex items-center gap-2 mb-4">
-          <GitBranch className="w-4 h-4 text-accent-purple"/>
-          <p className="text-sm font-semibold text-slate-700">Exec Breakdown</p>
-          <span className="text-[11px] text-slate-400 ml-auto">pipeline share · {selectedMonthCols.length}m range</span>
-        </div>
-        {execPipeline.length === 0 ? (
-          <p className="text-slate-400 text-sm text-center py-6">No data for current filters</p>
-        ) : (
-          <div className="space-y-3">
-            {execPipeline.map((e) => {
-              const pct   = totalPipeline > 0 ? Math.round((e.pipeline / totalPipeline) * 100) : 0;
-              const color = SALESPERSON_COLORS[e.name];
-              return (
-                <div key={e.name} className="flex items-center gap-3">
-                  <div className="flex items-center gap-2 w-20 flex-shrink-0">
-                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: color}}/>
-                    <span className="text-xs font-medium text-slate-600 truncate">{e.name}</span>
-                  </div>
-                  <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
-                    <div className="h-full rounded-full transition-all duration-500" style={{ width:`${pct}%`, backgroundColor:color}}/>
-                  </div>
-                  <span className="text-xs text-slate-500 w-12 text-right">{formatCurrency(e.pipeline)}</span>
-                  <span className="text-[10px] text-slate-400 w-8 text-right">{pct}%</span>
-                  <span className="text-[10px] text-slate-400 w-16 text-right">{e.clients} client{e.clients!==1?"s":""}</span>
+              {productFrequency.length === 0 ? (
+                <div className="h-48 flex items-center justify-center text-slate-400 text-sm">No data for current filters</div>
+              ) : (
+                <div className="h-52">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={productFrequency} layout="vertical" barSize={14} margin={{ left:8, right:20, top:0, bottom:0 }}>
+                      <XAxis type="number" tick={{ fontSize:10, fill:"#94A3B8" }} axisLine={false} tickLine={false}/>
+                      <YAxis type="category" dataKey="name" tick={{ fontSize:10, fill:"#64748B" }} axisLine={false} tickLine={false} width={130}/>
+                      <Tooltip content={({ active, payload }) => {
+                        if (!active || !payload?.length) return null;
+                        const d = payload[0].payload;
+                        return (
+                          <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-lg text-xs">
+                            <p className="font-semibold text-slate-700 mb-1">{d.name}</p>
+                            <p className="text-slate-500">{d.count} contract{d.count !== 1?"s":""}</p>
+                            <p className="text-accent-green mt-0.5">{formatCurrency(d.pipeline)} pipeline</p>
+                          </div>
+                        );
+                      }} cursor={{ fill:"rgba(79,70,229,0.04)" }}/>
+                      <Bar dataKey="count" radius={[0,4,4,0]}>
+                        {productFrequency.map((_, i) => <Cell key={i} fill={PRODUCT_COLORS[i % PRODUCT_COLORS.length]}/>)}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
                 </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
+              )}
+            </div>
 
-      {/* Multi-service overlap */}
-      {multiServiceClients.length > 0 && (
-        <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-card mb-6">
-          <div className="flex items-center gap-2 mb-4">
-            <Layers className="w-4 h-4 text-accent-amber"/>
-            <p className="text-sm font-semibold text-slate-700">Service Overlap</p>
-            <span className="text-[11px] bg-accent-amberLight text-accent-amber border border-amber-200 px-2 py-0.5 rounded-full ml-2">
-              {multiServiceClients.length} client{multiServiceClients.length!==1?"s":""} with 2+ services
-            </span>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {multiServiceClients.map(([name, cs]) => {
-              const color = SALESPERSON_COLORS[cs[0].salesperson];
-              const total = cs.reduce((a, c) => a + c.dealValue, 0);
-              return (
-                <div key={name} className="border border-slate-200 rounded-xl p-3 hover:border-accent-border hover:bg-accent-light/10 transition-all">
-                  <div className="flex items-center gap-2 mb-2">
-                    <div className="w-6 h-6 rounded-lg flex items-center justify-center text-[10px] font-bold flex-shrink-0"
-                      style={{ backgroundColor:color+"20", color }}>
-                      {name.charAt(0)}
-                    </div>
-                    <ClientLink clientName={name} salesperson={cs[0].salesperson}/>
-                    <span className="ml-auto text-xs font-semibold text-slate-600">{formatCurrency(total)}</span>
+            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-card">
+              <div className="flex items-center gap-2 mb-4">
+                <TrendingUp className="w-4 h-4 text-accent-cyan"/>
+                <p className="text-sm font-semibold text-slate-700">Pipeline by AM</p>
+                <span className="text-[10px] text-slate-400 ml-auto">{selectedMonthCols.length}m range</span>
+              </div>
+              {amPipeline.length === 0 ? (
+                <div className="h-48 flex items-center justify-center text-slate-400 text-sm">No data</div>
+              ) : (
+                <>
+                  <div className="h-36">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie data={amPipeline} cx="50%" cy="50%" innerRadius={38} outerRadius={58} paddingAngle={2} dataKey="value" strokeWidth={0}>
+                          {amPipeline.map((_, i) => <Cell key={i} fill={PRODUCT_COLORS[i % PRODUCT_COLORS.length]}/>)}
+                        </Pie>
+                        <Tooltip content={({ active, payload }) => {
+                          if (!active || !payload?.length) return null;
+                          const d = payload[0].payload;
+                          return (
+                            <div className="bg-white border border-slate-200 rounded-xl p-2.5 shadow-lg text-xs">
+                              <p className="font-semibold text-slate-700">{d.name}</p>
+                              <p className="text-accent-green mt-0.5">{formatCurrency(d.value)}</p>
+                            </div>
+                          );
+                        }}/>
+                      </PieChart>
+                    </ResponsiveContainer>
                   </div>
-                  <div className="space-y-1">
-                    {cs.map((c, i) => (
-                      <div key={i} className="flex items-center gap-1.5">
-                        <span className="w-1 h-1 rounded-full bg-accent flex-shrink-0"/>
-                        <span className="text-[10px] text-slate-500 truncate">{c.product}</span>
-                        <span className="text-[10px] text-slate-400 ml-auto flex-shrink-0">{formatCurrency(c.dealValue)}</span>
+                  <div className="space-y-1.5 mt-2">
+                    {amPipeline.slice(0,5).map((am, i) => (
+                      <div key={am.name} className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: PRODUCT_COLORS[i % PRODUCT_COLORS.length]}}/>
+                        <span className="text-xs text-slate-600 flex-1 truncate">{am.name}</span>
+                        <span className="text-xs font-semibold text-slate-500">{formatCurrency(am.value)}</span>
                       </div>
                     ))}
+                    {amPipeline.length > 5 && <p className="text-[10px] text-slate-400 pl-4">+{amPipeline.length-5} more</p>}
                   </div>
-                  <div className="mt-2 pt-2 border-t border-slate-100 flex items-center gap-2">
-                    <span className="text-[10px] text-slate-400">{cs[0].salesperson}</span>
-                    <span className="text-slate-300">·</span>
-                    <span className="text-[10px] text-slate-400">{cs[0].accountManager}</span>
-                  </div>
-                </div>
-              );
-            })}
+                </>
+              )}
+            </div>
           </div>
-        </div>
-      )}
 
-      {/* Client results */}
-      <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-card">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-slate-50/50">
-          <div className="flex items-center gap-2">
-            <Users className="w-4 h-4 text-slate-500"/>
-            <p className="text-sm font-semibold text-slate-700">{visibleClients.length} Client{visibleClients.length!==1?"s":""}</p>
-            {activeFilterCount > 0 && <span className="text-[11px] text-accent bg-accent-light border border-accent-border px-2 py-0.5 rounded-full">filtered</span>}
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="text-xs text-slate-400">{totalContracts} contracts · {formatCurrency(totalPipeline)} pipeline</span>
-          </div>
-        </div>
-
-        {visibleClients.length === 0 ? (
-          <div className="py-16 text-center">
-            <Filter className="w-8 h-8 text-slate-300 mx-auto mb-3"/>
-            <p className="text-slate-500 font-medium">No clients match these filters</p>
-            <button onClick={clearAll} className="mt-2 text-xs text-accent hover:underline">Clear all filters</button>
-          </div>
-        ) : (
-          <div className="divide-y divide-slate-100">
-            {visibleClients.map(([name, cs]) => {
-              const color = SALESPERSON_COLORS[cs[0].salesperson];
-              const total = cs.reduce((a, c) => a + c.dealValue, 0);
-              const rangePipeline = cs.reduce((a, c) =>
-                a + c.renewalSchedule.filter((r) => {
-                  const col = `${["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][r.month-1]}-${r.year}`;
-                  return selectedMonthCols.includes(col);
-                }).reduce((b, r) => b + r.amount, 0), 0);
-              return (
-                <div key={name} className="flex items-center gap-4 px-5 py-3 hover:bg-slate-50/80 transition-colors">
-                  <div className="w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold flex-shrink-0"
-                    style={{ backgroundColor:color+"15", color }}>
-                    {name.charAt(0)}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <ClientLink clientName={name} salesperson={cs[0].salesperson}/>
-                      {cs.length > 1 && (
-                        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-accent-amberLight text-accent-amber border border-amber-200">
-                          {cs.length} services
-                        </span>
-                      )}
+          {/* Exec breakdown */}
+          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-card mb-6">
+            <div className="flex items-center gap-2 mb-4">
+              <GitBranch className="w-4 h-4 text-accent-purple"/>
+              <p className="text-sm font-semibold text-slate-700">Exec Breakdown</p>
+              <span className="text-[11px] text-slate-400 ml-auto">pipeline share · {selectedMonthCols.length}m range</span>
+            </div>
+            {execPipeline.length === 0 ? (
+              <p className="text-slate-400 text-sm text-center py-6">No data for current filters</p>
+            ) : (
+              <div className="space-y-3">
+                {execPipeline.map((e) => {
+                  const pct   = totalPipeline > 0 ? Math.round((e.pipeline / totalPipeline) * 100) : 0;
+                  const color = SALESPERSON_COLORS[e.name];
+                  return (
+                    <div key={e.name} className="flex items-center gap-3">
+                      <div className="flex items-center gap-2 w-20 flex-shrink-0">
+                        <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: color}}/>
+                        <span className="text-xs font-medium text-slate-600 truncate">{e.name}</span>
+                      </div>
+                      <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
+                        <div className="h-full rounded-full transition-all duration-500" style={{ width:`${pct}%`, backgroundColor:color}}/>
+                      </div>
+                      <span className="text-xs text-slate-500 w-12 text-right">{formatCurrency(e.pipeline)}</span>
+                      <span className="text-[10px] text-slate-400 w-8 text-right">{pct}%</span>
+                      <span className="text-[10px] text-slate-400 w-16 text-right">{e.clients} client{e.clients!==1?"s":""}</span>
                     </div>
-                    <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                      <span className="text-[11px] text-slate-400">{cs[0].salesperson}</span>
-                      <span className="text-slate-300">·</span>
-                      <span className="text-[11px] text-slate-400">{cs[0].accountManager}</span>
-                      <span className="text-slate-300">·</span>
-                      <div className="flex gap-1 flex-wrap">
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Multi-service overlap */}
+          {multiServiceClients.length > 0 && (
+            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-card mb-6">
+              <div className="flex items-center gap-2 mb-4">
+                <Layers className="w-4 h-4 text-accent-amber"/>
+                <p className="text-sm font-semibold text-slate-700">Service Overlap</p>
+                <span className="text-[11px] bg-accent-amberLight text-accent-amber border border-amber-200 px-2 py-0.5 rounded-full ml-2">
+                  {multiServiceClients.length} client{multiServiceClients.length!==1?"s":""} with 2+ services
+                </span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {multiServiceClients.map(([name, cs]) => {
+                  const color = SALESPERSON_COLORS[cs[0].salesperson];
+                  const total = cs.reduce((a, c) => a + c.dealValue, 0);
+                  return (
+                    <div key={name} className="border border-slate-200 rounded-xl p-3 hover:border-accent-border hover:bg-accent-light/10 transition-all">
+                      <div className="flex items-center gap-2 mb-2">
+                        <div className="w-6 h-6 rounded-lg flex items-center justify-center text-[10px] font-bold flex-shrink-0" style={{ backgroundColor:color+"20", color }}>
+                          {name.charAt(0)}
+                        </div>
+                        <ClientLink clientName={name} salesperson={cs[0].salesperson}/>
+                        <span className="ml-auto text-xs font-semibold text-slate-600">{formatCurrency(total)}</span>
+                      </div>
+                      <div className="space-y-1">
                         {cs.map((c, i) => (
-                          <span key={i} className="text-[10px] text-slate-500 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded">
-                            {c.product}
-                          </span>
+                          <div key={i} className="flex items-center gap-1.5">
+                            <span className="w-1 h-1 rounded-full bg-accent flex-shrink-0"/>
+                            <span className="text-[10px] text-slate-500 truncate">{c.product}</span>
+                            <span className="text-[10px] text-slate-400 ml-auto flex-shrink-0">{formatCurrency(c.dealValue)}</span>
+                          </div>
                         ))}
                       </div>
+                      <div className="mt-2 pt-2 border-t border-slate-100 flex items-center gap-2">
+                        <span className="text-[10px] text-slate-400">{cs[0].salesperson}</span>
+                        <span className="text-slate-300">·</span>
+                        <span className="text-[10px] text-slate-400">{cs[0].accountManager}</span>
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex items-center gap-4 flex-shrink-0">
-                    <span className={cn("text-[10px] font-semibold px-1.5 py-0.5 rounded border",
-                      cs[0].gstStatus === "Y" ? "text-accent-cyan bg-cyan-50 border-cyan-200" : "text-slate-400 bg-slate-50 border-slate-200")}>
-                      {cs[0].gstStatus === "Y" ? "GST" : "No GST"}
-                    </span>
-                    <div className="text-right">
-                      <p className="text-sm font-semibold text-slate-700">{formatCurrency(rangePipeline)}</p>
-                      {rangePipeline !== total && <p className="text-[10px] text-slate-400">Deal: {formatCurrency(total)}</p>}
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Client results */}
+          <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-card">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-slate-50/50">
+              <div className="flex items-center gap-2">
+                <Users className="w-4 h-4 text-slate-500"/>
+                <p className="text-sm font-semibold text-slate-700">{visibleClients.length} Client{visibleClients.length!==1?"s":""}</p>
+                {activeFilterCount > 0 && <span className="text-[11px] text-accent bg-accent-light border border-accent-border px-2 py-0.5 rounded-full">filtered</span>}
+              </div>
+              <span className="text-xs text-slate-400">{totalContracts} contracts · {formatCurrency(totalPipeline)} pipeline</span>
+            </div>
+            {visibleClients.length === 0 ? (
+              <div className="py-16 text-center">
+                <Filter className="w-8 h-8 text-slate-300 mx-auto mb-3"/>
+                <p className="text-slate-500 font-medium">No clients match these filters</p>
+                <button onClick={clearAll} className="mt-2 text-xs text-accent hover:underline">Clear all filters</button>
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-100">
+                {visibleClients.map(([name, cs]) => {
+                  const color = SALESPERSON_COLORS[cs[0].salesperson];
+                  const total = cs.reduce((a, c) => a + c.dealValue, 0);
+                  const rangePipeline = cs.reduce((a, c) =>
+                    a + (c.renewalSchedule ?? []).filter((r) => {
+                      const col = `${["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][r.month-1]}-${r.year}`;
+                      return selectedMonthCols.includes(col);
+                    }).reduce((b, r) => b + r.amount, 0), 0);
+                  return (
+                    <div key={name} className="flex items-center gap-4 px-5 py-3 hover:bg-slate-50/80 transition-colors">
+                      <div className="w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold flex-shrink-0" style={{ backgroundColor:color+"15", color }}>
+                        {name.charAt(0)}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <ClientLink clientName={name} salesperson={cs[0].salesperson}/>
+                          {cs.length > 1 && (
+                            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-accent-amberLight text-accent-amber border border-amber-200">
+                              {cs.length} services
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                          <span className="text-[11px] text-slate-400">{cs[0].salesperson}</span>
+                          <span className="text-slate-300">·</span>
+                          <span className="text-[11px] text-slate-400">{cs[0].accountManager}</span>
+                          <span className="text-slate-300">·</span>
+                          <div className="flex gap-1 flex-wrap">
+                            {cs.map((c, i) => (
+                              <span key={i} className="text-[10px] text-slate-500 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded">{c.product}</span>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-4 flex-shrink-0">
+                        <span className={cn("text-[10px] font-semibold px-1.5 py-0.5 rounded border",
+                          cs[0].gstStatus === "Y" ? "text-accent-cyan bg-cyan-50 border-cyan-200" : "text-slate-400 bg-slate-50 border-slate-200")}>
+                          {cs[0].gstStatus === "Y" ? "GST" : "No GST"}
+                        </span>
+                        <div className="text-right">
+                          <p className="text-sm font-semibold text-slate-700">{formatCurrency(rangePipeline)}</p>
+                          {rangePipeline !== total && <p className="text-[10px] text-slate-400">Deal: {formatCurrency(total)}</p>}
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                </div>
-              );
-            })}
+                  );
+                })}
+              </div>
+            )}
           </div>
-        )}
-      </div>
+        </>
+      )}
+
+      {isLoading && (
+        <div className="py-20 text-center text-sm text-slate-400 animate-pulse">Loading insights...</div>
+      )}
     </PageWrapper>
   );
 }

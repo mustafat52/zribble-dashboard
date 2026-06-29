@@ -10,11 +10,12 @@ import { formatCurrency, getMonthShort, SALESPERSON_COLORS } from "@/lib/utils";
 import { NewContractForm, GSTStatus } from "@/types";
 import { useClient } from "@/lib/client-context";
 import { useAuth } from "@/lib/auth-context";
+import { useCreateContract } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import {
   User, Package, FileText, IndianRupee, CalendarDays,
   CheckCircle2, ChevronRight, AlertCircle, Sparkles,
-  RefreshCw, ShieldCheck, Clock, Trash2, Plus,
+  RefreshCw, ShieldCheck, Clock,
 } from "lucide-react";
 
 // ─── Options ─────────────────────────────────────────────────────────────────
@@ -112,8 +113,6 @@ const DEFAULT_FORM: NewContractForm = {
   firstRenewalDate:   "",
 };
 
-type PromiseRow = { date: string; amount: string; notes: string };
-
 // ─── Validation ───────────────────────────────────────────────────────────────
 function validate(form: NewContractForm, step: number): Record<string, string> {
   const errors: Record<string, string> = {};
@@ -123,9 +122,9 @@ function validate(form: NewContractForm, step: number): Record<string, string> {
     if (!form.accountManager)    errors.accountManager = "Select an account manager";
   }
   if (step >= 2) {
-    if (!form.product)                                           errors.product = "Select a product";
-    if (!form.profiles || form.profiles < 1)                    errors.profiles = "Minimum 1 profile";
-    if (!form.contractTermMonths || form.contractTermMonths < 1) errors.contractTermMonths = "Select contract term";
+    if (!form.product)                                               errors.product = "Select a product";
+    if (!form.profiles || form.profiles < 1)                         errors.profiles = "Minimum 1 profile";
+    if (!form.contractTermMonths || form.contractTermMonths < 1)     errors.contractTermMonths = "Select contract term";
   }
   if (step >= 3) {
     if (!form.dealValue || form.dealValue <= 0) errors.dealValue = "Enter a valid deal value";
@@ -136,7 +135,23 @@ function validate(form: NewContractForm, step: number): Record<string, string> {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 export default function NewEntryPage() {
-  const { user } = useAuth();
+  const { user, canPerform } = useAuth();
+
+  // ── Permission gate — only view_edit employees and super_admin can add clients ──
+  if (!canPerform("add_client")) {
+    return (
+      <PageWrapper>
+        <div className="max-w-lg mx-auto mt-20 text-center">
+          <div className="w-14 h-14 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center mx-auto mb-4">
+            <ShieldCheck className="w-7 h-7 text-slate-400" />
+          </div>
+          <h2 className="text-base font-semibold text-slate-700 mb-1">Access Restricted</h2>
+          <p className="text-sm text-slate-400">You don&apos;t have permission to add new contracts.</p>
+        </div>
+      </PageWrapper>
+    );
+  }
+
   const [step,         setStep]         = useState(1);
   const [form,         setForm]         = useState<NewContractForm>(DEFAULT_FORM);
   const [errors,       setErrors]       = useState<Record<string, string>>({});
@@ -149,15 +164,20 @@ export default function NewEntryPage() {
   const [initialNote, setInitialNote] = useState("");
 
   // Step 3 — onboarding payment
-  const [onboardingStatus, setOnboardingStatus] = useState<"collected"|"partial"|"not_collected">("collected");
-  const [onboardingAmount, setOnboardingAmount] = useState("");
-  const [onboardingDate,   setOnboardingDate]   = useState(new Date().toISOString().split("T")[0]);
-  const [onboardingNotes,  setOnboardingNotes]  = useState("");
+  const [onboardingStatus,  setOnboardingStatus]  = useState<"collected"|"partial"|"not_collected">("collected");
+  const [onboardingAmount,  setOnboardingAmount]  = useState("");
+  const [onboardingDate,    setOnboardingDate]    = useState(new Date().toISOString().split("T")[0]);
+  const [onboardingNotes,   setOnboardingNotes]   = useState("");
 
-  // Step 3 — multiple promise rows (only when partial)
-  const [promiseRows, setPromiseRows] = useState<PromiseRow[]>([{ date: "", amount: "", notes: "" }]);
+  // Step 3 — promise for remaining (only when partial)
+  const [promiseDate,  setPromiseDate]  = useState("");
+  const [promiseNotes, setPromiseNotes] = useState("");
 
   const { addOnboardingPayment, addNote: addClientNote, addPromise } = useClient();
+
+  // Use mutateAsync directly so we can await the real server-assigned contract ID
+  // before creating the dependent onboarding/promise/note records.
+  const createContractMutation = useCreateContract();
 
   const renewalPreview = useMemo(
     () => calcRenewalSchedule(form.firstRenewalDate, form.dealValue, form.contractTermMonths),
@@ -169,11 +189,6 @@ export default function NewEntryPage() {
   const paidAmount      = Number(onboardingAmount) || 0;
   const remainingAmount = form.dealValue > 0 ? Math.max(form.dealValue - paidAmount, 0) : 0;
   const isPartial       = onboardingStatus === "partial" && paidAmount > 0 && remainingAmount > 0;
-  const promisedTotal   = promiseRows.reduce((s, r) => s + (Number(r.amount) || 0), 0);
-
-  function updatePromiseRow(idx: number, field: keyof PromiseRow, value: string) {
-    setPromiseRows((prev) => prev.map((r, i) => i === idx ? { ...r, [field]: value } : r));
-  }
 
   function update<K extends keyof NewContractForm>(key: K, value: NewContractForm[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -192,55 +207,76 @@ export default function NewEntryPage() {
     const errs = validate(form, 4);
     if (Object.keys(errs).length) { setErrors(errs); return; }
     setLoading(true);
-    await new Promise((r) => setTimeout(r, 1000));
 
-    const newContractId = `c-new-${Date.now()}`;
-
-    // Save onboarding payment
-    if (onboardingStatus !== "not_collected" && onboardingAmount) {
-      addOnboardingPayment({
-        contractId:      newContractId,
-        clientName:      form.clientName,
-        salesperson:     form.salesperson,
-        status:          onboardingStatus,
-        amountCollected: paidAmount,
-        paidOn:          onboardingDate,
-        notes:           onboardingNotes || undefined,
+    try {
+      // 1. Create the contract first and await the real server-assigned ID.
+      //    The backend enforces the employee's own salesperson name server-side,
+      //    so whatever is in form.salesperson is used for admins; employees are
+      //    overridden by the backend regardless.
+      const created = await createContractMutation.mutateAsync({
+        salesperson:        form.salesperson,
+        clientName:         form.clientName,
+        product:            form.product,
+        accountManager:     form.accountManager,
+        contractId:         form.contractId || undefined,
+        profiles:           form.profiles,
+        gstStatus:          form.gstStatus,
+        dealValue:          form.dealValue,
+        contractTermMonths: form.contractTermMonths,
+        firstRenewalDate:   form.firstRenewalDate,
+        renewalSchedule:    renewalPreview,
       });
-    }
 
-    // Save all valid promise rows if partial
-    if (isPartial) {
-      promiseRows.filter((r) => r.date).forEach((row, idx) => {
+      const realContractId = created.id;
+
+      // 2. Save onboarding payment against the real contract ID.
+      if (onboardingStatus !== "not_collected" && paidAmount > 0) {
+        addOnboardingPayment({
+          contractId:      realContractId,
+          clientName:      form.clientName,
+          salesperson:     form.salesperson,
+          status:          onboardingStatus,
+          amountCollected: paidAmount,
+          paidOn:          onboardingDate,
+          notes:           onboardingNotes || undefined,
+        });
+      }
+
+      // 3. Save promise if partial payment and promise date given.
+      if (isPartial && promiseDate) {
         addPromise({
-          id:             `p-onboard-${Date.now()}-${idx}`,
-          contractId:     newContractId,
+          id:             `p-onboard-${Date.now()}`,
+          contractId:     realContractId,
           clientName:     form.clientName,
           salesperson:    form.salesperson,
           renewalYear:    new Date(onboardingDate).getFullYear(),
           renewalMonth:   new Date(onboardingDate).getMonth() + 1,
           paidAmount,
           remainingAmount,
-          promisedDate:   row.date,
-          notes:          row.notes || `Onboarding balance of ${formatCurrency(remainingAmount)}`,
+          promisedDate:   promiseDate,
+          notes:          promiseNotes || `Onboarding balance of ${formatCurrency(remainingAmount)}`,
           createdAt:      new Date().toISOString(),
         });
-      });
-    }
+      }
 
-    // Save initial note
-    if (initialNote.trim()) {
-      addClientNote({
-        id:        `note-${Date.now()}`,
-        clientName: form.clientName,
-        text:       initialNote.trim(),
-        createdAt:  new Date().toISOString(),
-        createdBy:  user?.name ?? "Management",
-      });
-    }
+      // 4. Save initial note.
+      if (initialNote.trim()) {
+        addClientNote({
+          id:        `note-${Date.now()}`,
+          clientName: form.clientName,
+          text:       initialNote.trim(),
+          createdAt:  new Date().toISOString(),
+          createdBy:  user?.name ?? "Management",
+        });
+      }
 
-    setLoading(false);
-    setSubmitted(true);
+      setSubmitted(true);
+    } catch (err) {
+      console.error("Failed to create contract:", err);
+      setErrors({ submit: "Failed to create contract. Please try again." });
+    } finally {
+      setLoading(false);
+    }
   }
 
   function reset() {
@@ -253,7 +289,8 @@ export default function NewEntryPage() {
     setOnboardingAmount("");
     setOnboardingDate(new Date().toISOString().split("T")[0]);
     setOnboardingNotes("");
-    setPromiseRows([{ date: "", amount: "", notes: "" }]);
+    setPromiseDate("");
+    setPromiseNotes("");
   }
 
   const color = SALESPERSON_COLORS[form.salesperson] ?? "#3B82F6";
@@ -271,10 +308,10 @@ export default function NewEntryPage() {
             <span className="font-semibold text-gray-300">{form.clientName}</span> has been added
             under <span className="font-semibold text-gray-300">{form.salesperson}</span>.
           </p>
-          {isPartial && promiseRows.filter((r) => r.date).length > 0 && (
+          {isPartial && promiseDate && (
             <p className="text-xs text-amber-400 mb-2">
-              {promiseRows.filter((r) => r.date).length} payment promise{promiseRows.filter((r) => r.date).length > 1 ? "s" : ""} recorded
-              · {formatCurrency(remainingAmount)} outstanding
+              Promise of {formatCurrency(remainingAmount)} recorded for{" "}
+              {new Date(promiseDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
             </p>
           )}
           <p className="text-xs text-gray-600 mb-8">
@@ -545,8 +582,7 @@ export default function NewEntryPage() {
                         Signing / Onboarding Payment
                       </p>
                       <p className="text-xs text-slate-500">
-                        Record the payment collected at the time of signing.
-                        A new client entry is only created when at least some amount is received.
+                        Record the payment collected at the time of signing. A new client entry is only created when at least some amount is received.
                       </p>
 
                       {/* Status selector */}
@@ -554,14 +590,13 @@ export default function NewEntryPage() {
                         {(["collected","partial","not_collected"] as const).map((s) => (
                           <button
                             key={s}
-                            type="button"
                             onClick={() => setOnboardingStatus(s)}
                             className={cn(
                               "flex-1 py-2 rounded-lg text-xs font-medium border transition-all",
                               onboardingStatus === s
-                                ? s === "collected"   ? "bg-accent-green text-white border-accent-green"
-                                : s === "partial"     ? "bg-accent-amber text-white border-accent-amber"
-                                :                       "bg-accent-red text-white border-accent-red"
+                                ? s === "collected"     ? "bg-accent-green text-white border-accent-green"
+                                : s === "partial"       ? "bg-accent-amber text-white border-accent-amber"
+                                :                         "bg-accent-red text-white border-accent-red"
                                 : "bg-white text-slate-500 border-slate-200 hover:border-slate-300"
                             )}
                           >
@@ -570,7 +605,7 @@ export default function NewEntryPage() {
                         ))}
                       </div>
 
-                      {/* Amount + date fields */}
+                      {/* Amount + date fields — show for collected and partial */}
                       {onboardingStatus !== "not_collected" && (
                         <>
                           <Input
@@ -602,7 +637,7 @@ export default function NewEntryPage() {
                       {onboardingStatus !== "not_collected" && paidAmount > 0 && (
                         <div className={cn(
                           "flex items-center justify-between px-4 py-3 rounded-xl border",
-                          remainingAmount === 0
+                          onboardingStatus === "collected" || remainingAmount === 0
                             ? "bg-accent-greenLight border-emerald-200"
                             : "bg-accent-amberLight border-amber-200"
                         )}>
@@ -614,125 +649,51 @@ export default function NewEntryPage() {
                         </div>
                       )}
 
-                      {/* ── MULTIPLE PROMISE ROWS — shows when partial ── */}
+                      {/* ── PROMISE SECTION — shows when partial and remaining > 0 ── */}
                       {isPartial && (
-                        <div className="border border-amber-200 bg-accent-amberLight rounded-xl overflow-hidden">
-                          <div className="px-4 pt-4 pb-2 space-y-1">
-                            <div className="flex items-center gap-2">
-                              <Clock className="w-4 h-4 text-accent-amber" />
-                              <p className="text-sm font-semibold text-amber-800">
-                                Promises for Remaining {formatCurrency(remainingAmount)}
-                              </p>
-                            </div>
-                            <p className="text-xs text-amber-700">
-                              When has the client committed to paying the rest?
-                              Each promise will appear on the renewal calendar on its date.
+                        <div className="border border-amber-200 bg-accent-amberLight rounded-xl p-4 space-y-4">
+                          <div className="flex items-center gap-2">
+                            <Clock className="w-4 h-4 text-accent-amber" />
+                            <p className="text-sm font-semibold text-amber-800">
+                              Promise for Remaining {formatCurrency(remainingAmount)}
                             </p>
                           </div>
+                          <p className="text-xs text-amber-700">
+                            When has the client promised to pay the remaining amount? This will appear on the renewal calendar on that date.
+                          </p>
 
-                          <div className="border border-amber-200 bg-amber-50 mx-4 mb-4 rounded-xl overflow-hidden">
-                            <div className="divide-y divide-amber-100">
-                              {promiseRows.map((row, idx) => (
-                                <div key={idx} className="p-3 space-y-2">
-                                  <div className="flex items-center justify-between">
-                                    <span className="text-[10px] font-semibold text-amber-700 uppercase tracking-wide">
-                                      Promise {promiseRows.length > 1 ? `#${idx + 1}` : ""}
-                                    </span>
-                                    {promiseRows.length > 1 && (
-                                      <button
-                                        type="button"
-                                        onClick={() => setPromiseRows((prev) => prev.filter((_, i) => i !== idx))}
-                                        className="text-amber-400 hover:text-accent-red transition-colors p-0.5 rounded"
-                                      >
-                                        <Trash2 className="w-3.5 h-3.5" />
-                                      </button>
-                                    )}
-                                  </div>
-                                  <div className="grid grid-cols-2 gap-2">
-                                    <div>
-                                      <label className="text-[10px] font-medium text-amber-700 block mb-1">Promised Date</label>
-                                      <input
-                                        type="date"
-                                        value={row.date}
-                                        onChange={(e) => updatePromiseRow(idx, "date", e.target.value)}
-                                        className="w-full px-3 py-2 h-9 text-sm bg-white border border-amber-200 rounded-lg focus:outline-none focus:border-accent-amber focus:ring-1 focus:ring-amber-200 text-slate-700"
-                                      />
-                                    </div>
-                                    <div>
-                                      <label className="text-[10px] font-medium text-amber-700 block mb-1">Amount (₹)</label>
-                                      <div className="relative">
-                                        <IndianRupee className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-amber-400" />
-                                        <input
-                                          type="number"
-                                          value={row.amount}
-                                          placeholder="0"
-                                          onChange={(e) => updatePromiseRow(idx, "amount", e.target.value)}
-                                          className="w-full pl-7 pr-3 py-2 h-9 text-sm bg-white border border-amber-200 rounded-lg focus:outline-none focus:border-accent-amber focus:ring-1 focus:ring-amber-200 text-slate-700"
-                                        />
-                                      </div>
-                                    </div>
-                                  </div>
-                                  <div>
-                                    <label className="text-[10px] font-medium text-amber-700 block mb-1">Note (optional)</label>
-                                    <input
-                                      type="text"
-                                      value={row.notes}
-                                      placeholder="e.g. Cheque on 15th, NEFT transfer"
-                                      onChange={(e) => updatePromiseRow(idx, "notes", e.target.value)}
-                                      className="w-full px-3 py-2 h-9 text-sm bg-white border border-amber-200 rounded-lg focus:outline-none focus:border-accent-amber focus:ring-1 focus:ring-amber-200 text-slate-700"
-                                    />
-                                  </div>
-                                  {row.date && (
-                                    <p className="text-[11px] text-amber-700 bg-white border border-amber-200 rounded-lg px-2.5 py-1.5">
-                                      📅 Will appear on calendar on{" "}
-                                      <strong>
-                                        {new Date(row.date).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
-                                      </strong>
-                                      {row.amount ? ` · ${formatCurrency(Number(row.amount))}` : ""}
-                                    </p>
-                                  )}
-                                </div>
-                              ))}
-                            </div>
+                          <Input
+                            label="Promised Payment Date"
+                            type="date"
+                            value={promiseDate}
+                            onChange={(e) => setPromiseDate(e.target.value)}
+                            hint="This date will show on the calendar as a payment promise"
+                          />
 
-                            {/* Footer — totals + add button */}
-                            <div className="px-3 py-2.5 bg-amber-100/60 border-t border-amber-200 flex items-center justify-between gap-3">
-                              <div className="text-xs text-amber-700">
-                                {promiseRows.some((r) => r.date || r.amount) ? (
-                                  <>
-                                    Promised:{" "}
-                                    <span className="font-semibold">{formatCurrency(promisedTotal)}</span>
-                                    {" "}of Outstanding:{" "}
-                                    <span className="font-semibold">{formatCurrency(remainingAmount)}</span>
-                                    {promisedTotal === remainingAmount && (
-                                      <span className="ml-2 text-accent-green font-semibold flex items-center gap-1 inline-flex">
-                                        <CheckCircle2 className="w-3 h-3" /> Balanced
-                                      </span>
-                                    )}
-                                    {promisedTotal > remainingAmount && (
-                                      <span className="ml-2 text-accent-green font-semibold">
-                                        +{formatCurrency(promisedTotal - remainingAmount)} over
-                                      </span>
-                                    )}
-                                    {promisedTotal > 0 && promisedTotal < remainingAmount && (
-                                      <span className="ml-2 text-accent-red font-semibold">
-                                        {formatCurrency(remainingAmount - promisedTotal)} short
-                                      </span>
-                                    )}
-                                  </>
-                                ) : (
-                                  <span className="italic text-amber-500">Set dates to track on calendar</span>
-                                )}
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() => setPromiseRows((prev) => [...prev, { date: "", amount: "", notes: "" }])}
-                                className="flex items-center gap-1 text-xs font-semibold text-amber-700 hover:text-amber-900 transition-colors flex-shrink-0"
-                              >
-                                <Plus className="w-3.5 h-3.5" /> Add another date
-                              </button>
+                          <Input
+                            label="Promise Notes (optional)"
+                            placeholder="e.g. Cheque on 15th, will transfer after GST filing"
+                            value={promiseNotes}
+                            onChange={(e) => setPromiseNotes(e.target.value)}
+                            leftIcon={<FileText className="w-3.5 h-3.5" />}
+                          />
+
+                          {promiseDate ? (
+                            <div className="flex items-start gap-2 px-3 py-2.5 bg-white border border-amber-200 rounded-lg">
+                              <AlertCircle className="w-3.5 h-3.5 text-accent-amber mt-0.5 flex-shrink-0" />
+                              <p className="text-xs text-amber-700">
+                                <span className="font-semibold">{formatCurrency(remainingAmount)}</span> from{" "}
+                                <span className="font-semibold">{form.clientName || "this client"}</span> will appear on the calendar on{" "}
+                                <span className="font-semibold">
+                                  {new Date(promiseDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                                </span>
+                              </p>
                             </div>
-                          </div>
+                          ) : (
+                            <p className="text-xs text-amber-600 italic">
+                              ⚠ No promise date set — the remaining amount won&apos;t show on the calendar
+                            </p>
+                          )}
                         </div>
                       )}
                     </div>
@@ -769,9 +730,12 @@ export default function NewEntryPage() {
                             ? `Partial — ${formatCurrency(paidAmount)} of ${formatCurrency(form.dealValue)}`
                             : `Collected — ${formatCurrency(paidAmount || form.dealValue)}`
                         ],
-                        ...(isPartial ? [["Remaining",  formatCurrency(remainingAmount)]] : []),
-                        ...(isPartial && promiseRows.filter((r) => r.date).length > 0
-                          ? [["Promises", `${promiseRows.filter((r) => r.date).length} date${promiseRows.filter((r) => r.date).length > 1 ? "s" : ""} · ${formatCurrency(promisedTotal)} committed`]]
+                        ...(isPartial && promiseDate
+                          ? [["Promise Date", new Date(promiseDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })]]
+                          : []
+                        ),
+                        ...(isPartial && remainingAmount > 0
+                          ? [["Remaining", formatCurrency(remainingAmount)]]
                           : []
                         ),
                       ].map(([label, value]) => (
@@ -779,9 +743,9 @@ export default function NewEntryPage() {
                           <span className="text-gray-500">{label}</span>
                           <span className={cn(
                             "font-medium",
-                            label === "Total Pipeline" ? "text-accent-green"  :
-                            label === "Remaining"      ? "text-accent-amber"  :
-                            label === "Promises"       ? "text-accent-amber"  :
+                            label === "Total Pipeline"  ? "text-accent-green"  :
+                            label === "Remaining"       ? "text-accent-amber"  :
+                            label === "Promise Date"    ? "text-accent-amber"  :
                             "text-gray-300"
                           )}>
                             {value}
@@ -795,9 +759,15 @@ export default function NewEntryPage() {
                         <ShieldCheck className="w-3.5 h-3.5 text-accent-cyan mt-0.5 flex-shrink-0" />
                         <p className="text-xs text-accent-cyan/80">
                           GST-registered client. Invoices will include 18% GST.
-                          Effective per renewal:{" "}
-                          <span className="font-semibold">{formatCurrency(Math.round(form.dealValue * 1.18))}</span>
+                          Effective per renewal: <span className="font-semibold">{formatCurrency(Math.round(form.dealValue * 1.18))}</span>
                         </p>
+                      </div>
+                    )}
+
+                    {errors.submit && (
+                      <div className="flex items-start gap-2.5 px-3 py-2.5 rounded-lg bg-red-50 border border-red-200">
+                        <AlertCircle className="w-3.5 h-3.5 text-red-500 mt-0.5 flex-shrink-0" />
+                        <p className="text-xs text-red-600">{errors.submit}</p>
                       </div>
                     )}
 
@@ -893,14 +863,6 @@ export default function NewEntryPage() {
                     <div className="flex justify-between text-xs">
                       <span className="text-gray-600">Remaining</span>
                       <span className="font-semibold text-accent-amber">{formatCurrency(remainingAmount)}</span>
-                    </div>
-                  )}
-                  {isPartial && promiseRows.filter((r) => r.date).length > 0 && (
-                    <div className="flex justify-between text-xs">
-                      <span className="text-gray-600">Promises</span>
-                      <span className="font-semibold text-accent-amber">
-                        {promiseRows.filter((r) => r.date).length} date{promiseRows.filter((r) => r.date).length > 1 ? "s" : ""}
-                      </span>
                     </div>
                   )}
                   <div className="flex justify-between text-xs pt-1 border-t border-surface-border">

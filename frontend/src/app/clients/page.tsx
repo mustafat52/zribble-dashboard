@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { PageWrapper } from "@/components/layout/PageWrapper";
 import { ClientList } from "@/components/clients/ClientList";
-import { PaymentModal } from "@/components/renewals/PaymentModal";
+import { PaymentModal, PaymentPromise } from "@/components/renewals/PaymentModal";
 import { Contract } from "@/types";
 import { useClient } from "@/lib/client-context";
 import { useAuth } from "@/lib/auth-context";
@@ -10,7 +10,7 @@ import { useAuth } from "@/lib/auth-context";
 interface PaymentTarget { contractId: string; year: number; month: number; }
 
 export default function ClientsPage() {
-  const { isClientStopped, stopClient, reactivateClient } = useClient();
+  const { isClientStopped, recordPayment } = useClient();
   const { user, canPerform } = useAuth();
   const salespersonFilter = canPerform("view_all") ? null : user?.salesperson ?? null;
 
@@ -20,6 +20,23 @@ export default function ClientsPage() {
   function openPayment(contractId: string, year: number, month: number) {
     setSelectedClient(null);
     setPaymentTarget({ contractId, year, month });
+  }
+
+  function handlePaymentSave(data: {
+    contractId: string; year: number; month: number;
+    amount: number; status: string; notes: string; paidOn: string;
+    promise?: Omit<PaymentPromise, "id" | "createdAt">;
+  }) {
+    recordPayment({
+      contractId: data.contractId,
+      year:       data.year,
+      month:      data.month,
+      amount:     data.amount,
+      notes:      data.notes,
+      paidOn:     data.paidOn,
+      promises:   data.promise ? [{ date: data.promise.promisedDate, amount: data.promise.remainingAmount, notes: data.promise.notes }] : [],
+    });
+    setPaymentTarget(null);
   }
 
   return (
@@ -46,7 +63,7 @@ export default function ClientsPage() {
           contractId={paymentTarget.contractId}
           renewalYear={paymentTarget.year}
           renewalMonth={paymentTarget.month}
-          onSave={(data) => console.log("Payment saved:", data)}
+          onSave={handlePaymentSave}
         />
       )}
     </PageWrapper>

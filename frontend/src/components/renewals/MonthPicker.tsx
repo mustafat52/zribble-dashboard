@@ -1,7 +1,8 @@
 "use client";
 import { ChevronLeft, ChevronRight, CalendarDays } from "lucide-react";
 import { cn, getMonthShort, formatCurrency } from "@/lib/utils";
-import { MONTHLY_TOTALS } from "@/lib/mock-data";
+import { useContracts } from "@/lib/api";
+import { useMemo } from "react";
 
 interface MonthPickerProps {
   year: number;
@@ -14,6 +15,7 @@ const MAX_YEAR = 2028;
 const MIN_MONTH_2026 = 7;
 
 export function MonthPicker({ year, month, onChange }: MonthPickerProps) {
+  const { data: allContracts = [] } = useContracts();
   const months = Array.from({ length: 12 }, (_, i) => i + 1);
   const canPrevYear = year > MIN_YEAR;
   const canNextYear = year < MAX_YEAR;
@@ -22,11 +24,35 @@ export function MonthPicker({ year, month, onChange }: MonthPickerProps) {
     return year === MIN_YEAR && m < MIN_MONTH_2026;
   }
 
-  const monthValues = months.map((m) => {
-    const t = MONTHLY_TOTALS.find((mt) => mt.year === year && mt.month === m);
-    return t?.expected ?? 0;
-  });
+  // Compute monthly expected totals from contracts
+  const monthlyTotals = useMemo(() => {
+    const map: Record<string, { expected: number; collected: number; pending: number }> = {};
+    allContracts.forEach((c) => {
+      (c.renewalSchedule ?? []).forEach((r) => {
+        const key = `${r.year}-${r.month}`;
+        if (!map[key]) map[key] = { expected: 0, collected: 0, pending: 0 };
+        map[key].expected += r.amount;
+        if (r.status === "collected") {
+          map[key].collected += r.amount;
+        } else if (r.status === "partial") {
+          const paid = (r as any).payments?.reduce((a: number, p: any) => a + p.amount, 0) ?? 0;
+          map[key].collected += paid;
+          map[key].pending   += r.amount - paid;
+        } else {
+          map[key].pending += r.amount;
+        }
+      });
+    });
+    return map;
+  }, [allContracts]);
+
+  const monthValues = months.map((m) => monthlyTotals[`${year}-${m}`]?.expected ?? 0);
   const maxVal = Math.max(...monthValues, 1);
+
+  const selectedTotals = monthlyTotals[`${year}-${month}`];
+  const pct = selectedTotals && selectedTotals.expected > 0
+    ? Math.round((selectedTotals.collected / selectedTotals.expected) * 100)
+    : 0;
 
   return (
     <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-card select-none">
@@ -88,44 +114,39 @@ export function MonthPicker({ year, month, onChange }: MonthPickerProps) {
       </div>
 
       {/* Selected month summary */}
-      {(() => {
-        const t = MONTHLY_TOTALS.find((mt) => mt.year === year && mt.month === month);
-        if (!t) return null;
-        const pct = t.expected > 0 ? Math.round((t.collected / t.expected) * 100) : 0;
-        return (
-          <div className="mt-4 pt-3 border-t border-slate-100 space-y-2">
-            <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest">
-              {getMonthShort(month)} {year} Summary
-            </p>
-            <div className="flex justify-between text-xs">
-              <span className="text-slate-400">Expected</span>
-              <span className="font-semibold text-slate-700">{formatCurrency(t.expected)}</span>
+      {selectedTotals && selectedTotals.expected > 0 && (
+        <div className="mt-4 pt-3 border-t border-slate-100 space-y-2">
+          <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest">
+            {getMonthShort(month)} {year} Summary
+          </p>
+          <div className="flex justify-between text-xs">
+            <span className="text-slate-400">Expected</span>
+            <span className="font-semibold text-slate-700">{formatCurrency(selectedTotals.expected)}</span>
+          </div>
+          <div className="flex justify-between text-xs">
+            <span className="text-slate-400">Collected</span>
+            <span className="font-semibold text-accent-green">{formatCurrency(selectedTotals.collected)}</span>
+          </div>
+          <div className="flex justify-between text-xs">
+            <span className="text-slate-400">Pending</span>
+            <span className="font-semibold text-accent-amber">{formatCurrency(selectedTotals.pending)}</span>
+          </div>
+          <div className="mt-1">
+            <div className="flex justify-between text-[10px] text-slate-400 mb-1">
+              <span>Collection rate</span>
+              <span>{pct}%</span>
             </div>
-            <div className="flex justify-between text-xs">
-              <span className="text-slate-400">Collected</span>
-              <span className="font-semibold text-accent-green">{formatCurrency(t.collected)}</span>
-            </div>
-            <div className="flex justify-between text-xs">
-              <span className="text-slate-400">Pending</span>
-              <span className="font-semibold text-accent-amber">{formatCurrency(t.pending)}</span>
-            </div>
-            <div className="mt-1">
-              <div className="flex justify-between text-[10px] text-slate-400 mb-1">
-                <span>Collection rate</span>
-                <span>{pct}%</span>
-              </div>
-              <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                <div
-                  className={cn("h-full rounded-full transition-all duration-500",
-                    pct >= 80 ? "bg-accent-green" : pct >= 50 ? "bg-accent-amber" : "bg-accent-red"
-                  )}
-                  style={{ width: `${pct}%` }}
-                />
-              </div>
+            <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+              <div
+                className={cn("h-full rounded-full transition-all duration-500",
+                  pct >= 80 ? "bg-accent-green" : pct >= 50 ? "bg-accent-amber" : "bg-accent-red"
+                )}
+                style={{ width: `${pct}%` }}
+              />
             </div>
           </div>
-        );
-      })()}
+        </div>
+      )}
     </div>
   );
 }

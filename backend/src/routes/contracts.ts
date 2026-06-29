@@ -6,6 +6,31 @@ import { canWrite } from "../middleware/role";
 const router = Router();
 router.use(authenticate);
 
+// ── GET /contracts/salespersons ───────────────────────────────────────────────
+// Must come BEFORE /:id so "salespersons" is not treated as a contract id.
+// Returns the unique salesperson names that exist in the DB.
+// Employees always get only their own name.
+router.get("/salespersons", async (req: Request, res: Response) => {
+  try {
+    const user = req.user!;
+
+    if (user.role === "employee" && user.salesperson) {
+      res.json([user.salesperson]);
+      return;
+    }
+
+    const groups = await prisma.contract.groupBy({
+      by: ["salesperson"],
+      orderBy: { salesperson: "asc" },
+    });
+
+    res.json(groups.map((g) => g.salesperson));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch salespersons" });
+  }
+});
+
 // ── GET /contracts ────────────────────────────────────────────────────────────
 // super_admin / accounts_team → all contracts
 // employee → own salesperson only

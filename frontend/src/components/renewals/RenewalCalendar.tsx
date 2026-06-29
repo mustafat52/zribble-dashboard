@@ -1,16 +1,16 @@
 "use client";
 import { useMemo, useState } from "react";
-import { getRenewalsForMonth } from "@/lib/mock-data";
+import { useContracts } from "@/lib/api";
 import { formatCurrency, SALESPERSON_COLORS, getMonthShort } from "@/lib/utils";
 import { StatusBadge } from "@/components/ui/Badge";
 import { cn } from "@/lib/utils";
-import { X, CalendarDays, Clock, IndianRupee } from "lucide-react";
+import { X, CalendarDays, Clock } from "lucide-react";
 import { ClientLink } from "@/components/clients/ClientLink";
 import { PaymentPromise } from "./PaymentModal";
 
 interface DayData {
   day: number;
-  renewals: { clientName: string; salesperson: string; amount: number; status: string; product: string }[];
+  renewals: { clientName: string; salesperson: string; amount: number; status: string; product: string; contractId: string }[];
   promises: PaymentPromise[];
 }
 
@@ -33,9 +33,7 @@ function DayDetail({ day, year, month, data, onClose }: { day: number; year: num
             <X className="w-4 h-4" />
           </button>
         </div>
-
         <div className="overflow-y-auto max-h-[calc(80vh-80px)] p-5 space-y-5">
-          {/* Renewals */}
           {data.renewals.length > 0 && (
             <div>
               <div className="flex items-center gap-2 mb-3">
@@ -64,8 +62,6 @@ function DayDetail({ day, year, month, data, onClose }: { day: number; year: num
               </div>
             </div>
           )}
-
-          {/* Payment Promises */}
           {data.promises.length > 0 && (
             <div>
               <div className="flex items-center gap-2 mb-3">
@@ -81,14 +77,9 @@ function DayDetail({ day, year, month, data, onClose }: { day: number; year: num
                       <ClientLink clientName={p.clientName} salesperson={p.salesperson} className="text-amber-800" />
                       <div className="flex items-center gap-2 mt-0.5">
                         <span className="text-[11px] text-amber-600">{p.salesperson}</span>
-                        {p.notes && (
-                          <><span className="text-amber-300">·</span>
-                          <span className="text-[11px] text-amber-600 italic truncate">{p.notes}</span></>
-                        )}
+                        {p.notes && (<><span className="text-amber-300">·</span><span className="text-[11px] text-amber-600 italic truncate">{p.notes}</span></>)}
                       </div>
-                      <p className="text-[11px] text-amber-500 mt-0.5">
-                        Already paid: {formatCurrency(p.paidAmount)} · Remaining: {formatCurrency(p.remainingAmount)}
-                      </p>
+                      <p className="text-[11px] text-amber-500 mt-0.5">Already paid: {formatCurrency(p.paidAmount)} · Remaining: {formatCurrency(p.remainingAmount)}</p>
                     </div>
                     <span className="text-sm font-bold text-accent-amber flex-shrink-0">{formatCurrency(p.remainingAmount)}</span>
                   </div>
@@ -111,25 +102,38 @@ interface RenewalCalendarProps {
 
 export function RenewalCalendar({ year, month, promises, salesperson }: RenewalCalendarProps) {
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
+  const { data: allContracts = [] } = useContracts();
 
-  const renewals = getRenewalsForMonth(year, month, salesperson);
+  const contracts = salesperson
+    ? allContracts.filter((c) => c.salesperson === salesperson)
+    : allContracts;
 
-  // Group renewals by day
+  // Group renewals by day using firstRenewalDate
   const renewalsByDay = useMemo(() => {
     const map: Record<number, DayData["renewals"]> = {};
-    renewals.forEach(({ contract: c, renewal: r }) => {
-      const date  = new Date(c.firstRenewalDate);
-      const rYear = date.getFullYear();
-      const rMon  = date.getMonth() + 1;
-      let day     = date.getDate();
-      if (rYear !== year || rMon !== month) {
-        day = (parseInt(c.id.replace("c", "")) % 28) + 1;
-      }
-      if (!map[day]) map[day] = [];
-      map[day].push({ clientName: c.clientName, salesperson: c.salesperson, amount: r.amount, status: r.status, product: c.product });
+    contracts.forEach((c) => {
+      (c.renewalSchedule ?? [])
+        .filter((r) => r.year === year && r.month === month)
+        .forEach((r) => {
+          const date = new Date(c.firstRenewalDate);
+          let day = date.getDate();
+          // If the firstRenewalDate is not in this month, distribute by contract id
+          if (date.getFullYear() !== year || date.getMonth() + 1 !== month) {
+            day = (parseInt(c.id.replace(/\D/g, "").slice(-4) || "1") % 28) + 1;
+          }
+          if (!map[day]) map[day] = [];
+          map[day].push({
+            clientName:  c.clientName,
+            salesperson: c.salesperson,
+            amount:      r.amount,
+            status:      r.status,
+            product:     c.product,
+            contractId:  c.id,
+          });
+        });
     });
     return map;
-  }, [renewals, year, month]);
+  }, [contracts, year, month]);
 
   // Group promises by day
   const promisesByDay = useMemo(() => {
@@ -156,48 +160,34 @@ export function RenewalCalendar({ year, month, promises, salesperson }: RenewalC
   while (cells.length % 7 !== 0) cells.push(null);
 
   const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-
   const selectedData: DayData | null = selectedDay
     ? { day: selectedDay, renewals: renewalsByDay[selectedDay] ?? [], promises: promisesByDay[selectedDay] ?? [] }
     : null;
 
   return (
     <div className="bg-white border border-slate-200 rounded-xl shadow-card overflow-hidden">
-      {/* Day labels */}
       <div className="grid grid-cols-7 border-b border-slate-100 bg-slate-50">
         {DAY_LABELS.map((d) => (
           <div key={d} className="py-2.5 text-center text-[11px] font-semibold text-slate-400 uppercase tracking-wide">{d}</div>
         ))}
       </div>
-
-      {/* Grid */}
       <div className="grid grid-cols-7 divide-x divide-slate-100">
         {cells.map((day, idx) => {
           if (!day) return <div key={`empty-${idx}`} className="min-h-[130px] bg-slate-50/40 border-b border-slate-100" />;
-
           const dayRenewals  = renewalsByDay[day]  ?? [];
           const dayPromises  = promisesByDay[day]  ?? [];
           const hasContent   = dayRenewals.length > 0 || dayPromises.length > 0;
           const isToday      = today.getDate() === day && today.getMonth() + 1 === month && today.getFullYear() === year;
           const totalAmount  = dayRenewals.reduce((a, r) => a + r.amount, 0);
           const totalPromise = dayPromises.reduce((a, p) => a + p.remainingAmount, 0);
-
           return (
-            <div
-              key={day}
-              onClick={() => hasContent && setSelectedDay(day)}
-              className={cn(
-                "min-h-[130px] border-b border-slate-100 p-2 flex flex-col gap-1 transition-colors",
+            <div key={day} onClick={() => hasContent && setSelectedDay(day)}
+              className={cn("min-h-[130px] border-b border-slate-100 p-2 flex flex-col gap-1 transition-colors",
                 hasContent && "cursor-pointer hover:bg-slate-50",
-                isToday && "bg-accent-light/20 ring-1 ring-inset ring-accent/20"
-              )}
-            >
-              {/* Day number + total */}
+                isToday && "bg-accent-light/20 ring-1 ring-inset ring-accent/20")}>
               <div className="flex items-center justify-between mb-0.5">
-                <span className={cn(
-                  "w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold",
-                  isToday ? "bg-accent text-white shadow-sm" : "text-slate-500"
-                )}>
+                <span className={cn("w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold",
+                  isToday ? "bg-accent text-white shadow-sm" : "text-slate-500")}>
                   {day}
                 </span>
                 {totalAmount > 0 && (
@@ -206,31 +196,23 @@ export function RenewalCalendar({ year, month, promises, salesperson }: RenewalC
                   </span>
                 )}
               </div>
-
-              {/* Renewal chips */}
               {dayRenewals.slice(0, 3).map((r, i) => (
-                <div key={i} className={cn(
-                  "flex items-center gap-1 px-1.5 py-0.5 rounded border overflow-hidden",
+                <div key={i} className={cn("flex items-center gap-1 px-1.5 py-0.5 rounded border overflow-hidden",
                   r.status === "collected" ? "bg-accent-greenLight border-emerald-200" :
                   r.status === "overdue"   ? "bg-accent-redLight border-red-200" :
                   r.status === "partial"   ? "bg-accent-amberLight border-amber-200" :
-                  "bg-slate-100 border-slate-200"
-                )}>
+                  "bg-slate-100 border-slate-200")}>
                   <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: SALESPERSON_COLORS[r.salesperson] }} />
                   <span className="text-[10px] text-slate-600 truncate flex-1 leading-tight">{r.clientName}</span>
-                  <span className={cn(
-                    "text-[9px] font-semibold flex-shrink-0",
+                  <span className={cn("text-[9px] font-semibold flex-shrink-0",
                     r.status === "collected" ? "text-accent-green" :
                     r.status === "overdue"   ? "text-accent-red" :
-                    r.status === "partial"   ? "text-accent-amber" : "text-slate-500"
-                  )}>{formatCurrency(r.amount)}</span>
+                    r.status === "partial"   ? "text-accent-amber" : "text-slate-500")}>
+                    {formatCurrency(r.amount)}
+                  </span>
                 </div>
               ))}
-              {dayRenewals.length > 3 && (
-                <span className="text-[10px] text-slate-400 pl-1">+{dayRenewals.length - 3} more</span>
-              )}
-
-              {/* Promise chips */}
+              {dayRenewals.length > 3 && <span className="text-[10px] text-slate-400 pl-1">+{dayRenewals.length - 3} more</span>}
               {dayPromises.slice(0, 2).map((p, i) => (
                 <div key={i} className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-50 border border-amber-300 overflow-hidden">
                   <Clock className="w-2 h-2 text-accent-amber flex-shrink-0" />
@@ -238,11 +220,7 @@ export function RenewalCalendar({ year, month, promises, salesperson }: RenewalC
                   <span className="text-[9px] font-bold text-accent-amber flex-shrink-0">{formatCurrency(p.remainingAmount)}</span>
                 </div>
               ))}
-              {dayPromises.length > 2 && (
-                <span className="text-[10px] text-accent-amber pl-1">+{dayPromises.length - 2} more</span>
-              )}
-
-              {/* Bottom: promise total */}
+              {dayPromises.length > 2 && <span className="text-[10px] text-accent-amber pl-1">+{dayPromises.length - 2} more</span>}
               {totalPromise > 0 && (
                 <div className="mt-auto">
                   <div className="flex items-center gap-0.5">
@@ -255,15 +233,13 @@ export function RenewalCalendar({ year, month, promises, salesperson }: RenewalC
           );
         })}
       </div>
-
-      {/* Legend */}
       <div className="px-4 py-3 border-t border-slate-100 bg-slate-50 flex flex-wrap items-center gap-4">
         {[
-          { color: "bg-slate-100 border-slate-200",        label: "Pending renewal"  },
-          { color: "bg-accent-greenLight border-emerald-200", label: "Collected"     },
-          { color: "bg-accent-amberLight border-amber-200",   label: "Partial"       },
-          { color: "bg-accent-redLight border-red-200",       label: "Overdue"       },
-          { color: "bg-amber-50 border-amber-300",            label: "Payment promise"},
+          { color: "bg-slate-100 border-slate-200",           label: "Pending renewal"   },
+          { color: "bg-accent-greenLight border-emerald-200", label: "Collected"         },
+          { color: "bg-accent-amberLight border-amber-200",   label: "Partial"           },
+          { color: "bg-accent-redLight border-red-200",       label: "Overdue"           },
+          { color: "bg-amber-50 border-amber-300",            label: "Payment promise"   },
         ].map(({ color, label }) => (
           <div key={label} className="flex items-center gap-1.5">
             <span className={cn("w-3 h-3 rounded border", color)} />
@@ -272,8 +248,6 @@ export function RenewalCalendar({ year, month, promises, salesperson }: RenewalC
         ))}
         <span className="ml-auto text-[11px] text-slate-400">Click any day for details</span>
       </div>
-
-      {/* Day detail */}
       {selectedDay && selectedData && (
         <DayDetail day={selectedDay} year={year} month={month} data={selectedData} onClose={() => setSelectedDay(null)} />
       )}

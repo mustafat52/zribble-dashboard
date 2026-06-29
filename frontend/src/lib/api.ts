@@ -32,7 +32,8 @@ export function useContracts() {
     queryKey: ["contracts"],
     queryFn: async () => {
       const data = await apiFetch<any[]>("/contracts");
-      // Backend returns renewalMonths, frontend expects renewalSchedule
+      // Backend returns renewalMonths + payments[], frontend expects renewalSchedule
+      // with payments scoped per renewal month (matched by renewalYear/renewalMonth).
       return data.map((c) => ({
         ...c,
         renewalSchedule: (c.renewalMonths ?? []).map((r: any) => ({
@@ -41,7 +42,9 @@ export function useContracts() {
           month: r.month,
           amount: r.overriddenAmount ?? r.amount,
           status: r.status,
-          payments: [],
+          payments: (c.payments ?? []).filter(
+            (p: any) => p.renewalYear === r.year && p.renewalMonth === r.month
+          ),
         })),
       }));
     },
@@ -187,5 +190,79 @@ export function useDashboardStats() {
     queryKey: ["dashboard"],
     queryFn:  () => apiFetch<DashboardStats>("/dashboard/stats"),
     staleTime: 30_000,
+  });
+}
+// ─── Salespersons list ────────────────────────────────────────────────────────
+export function useSalespersons() {
+  return useQuery<string[]>({
+    queryKey: ["salespersons"],
+    queryFn:  () => apiFetch<string[]>("/contracts/salespersons"),
+    staleTime: 5 * 60_000,
+  });
+}
+
+// ─── Renewal status override ──────────────────────────────────────────────────
+export function useUpdateRenewalStatus() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      contractId, year, month, status,
+    }: {
+      contractId: string;
+      year: number;
+      month: number;
+      status: "pending" | "partial" | "collected" | "overdue" | "waived";
+    }) =>
+      apiFetch(`/renewals/${contractId}/${year}/${month}/status`, {
+        method: "PATCH",
+        body: JSON.stringify({ status }),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["contracts"] }),
+  });
+}
+
+// ─── Renewal summary (monthly totals) ────────────────────────────────────────
+export interface RenewalSummaryMonth {
+  year: number;
+  month: number;
+  expected: number;
+  collected: number;
+  pending: number;
+  partial: number;
+  overdue: number;
+  waived: number;
+}
+
+export function useRenewalSummary(salesperson?: string) {
+  return useQuery<RenewalSummaryMonth[]>({
+    queryKey: ["renewals", "summary", salesperson ?? "all"],
+    queryFn:  () => {
+      const qs = salesperson ? `?salesperson=${encodeURIComponent(salesperson)}` : "";
+      return apiFetch<RenewalSummaryMonth[]>(`/renewals/summary${qs}`);
+    },
+    staleTime: 30_000,
+  });
+}
+
+// ─── Delete payment ───────────────────────────────────────────────────────────
+export function useDeletePayment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (paymentId: string) =>
+      apiFetch(`/payments/${paymentId}`, { method: "DELETE" }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["contracts"] }),
+  });
+}
+
+// ─── Delete promise ───────────────────────────────────────────────────────────
+export function useDeletePromise() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (promiseId: string) =>
+      apiFetch(`/promises/${promiseId}`, { method: "DELETE" }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["promises"] });
+      qc.invalidateQueries({ queryKey: ["contracts"] });
+    },
   });
 }

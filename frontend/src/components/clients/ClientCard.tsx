@@ -12,7 +12,8 @@ export function ClientCard({ contracts, onClick, stopped }: ClientCardProps) {
   const totalValue = contracts.reduce((a,c)=>a+c.dealValue,0);
   const products   = Array.from(new Set(contracts.map((c)=>c.product)));
   const color      = SALESPERSON_COLORS[primary.salesperson];
-  const now        = {year:2026,month:7};
+  const today      = new Date();
+  const now        = { year: today.getFullYear(), month: today.getMonth() + 1 };
   const nextRenewal = contracts.flatMap((c)=>c.renewalSchedule)
     .filter((r)=>r.year>now.year||(r.year===now.year&&r.month>=now.month))
     .sort((a,b)=>(a.year*100+a.month)-(b.year*100+b.month))[0];
