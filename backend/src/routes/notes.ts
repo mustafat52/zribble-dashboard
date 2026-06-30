@@ -31,8 +31,10 @@ router.post("/", canWrite, async (req: Request, res: Response) => {
       return;
     }
 
+    const dbUser = await prisma.user.findUnique({ where: { id: user.userId } });
+
     const note = await prisma.clientNote.create({
-      data: { clientName, text, createdBy: user.userId },
+      data: { clientName, text, createdBy: dbUser?.name ?? "Unknown" },
     });
 
     res.status(201).json(note);
