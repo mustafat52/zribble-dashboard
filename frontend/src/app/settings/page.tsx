@@ -85,7 +85,13 @@ const ROLE_COLORS: Record<UserRole, string> = {
   employee:      "bg-slate-100 text-slate-600 border-slate-200",
 };
 
-const SALESPERSON_OPTS = ["Aftab", "Sarvesh", "Firoz", "Idris", "Prajay", "Vinay"];
+// NOTE: previously a hardcoded SALESPERSON_OPTS = ["Aftab","Sarvesh",...] array
+// lived here, which made it impossible to assign a brand-new salesperson name
+// to a newly-created employee until that name already existed somewhere else.
+// The salesperson field below is now free-text with a <datalist> of existing
+// employee names (derived live from the `users` list already loaded on this
+// page) for autocomplete/consistency — never blocking, always reflects who's
+// actually in the system right now. See UserForm's `existingSalespeople` prop.
 
 const EMPTY_FORM: UserFormData = {
   name: "", email: "", password: "", role: "employee", mode: "view", salesperson: "",
@@ -99,9 +105,10 @@ interface UserFormProps {
   onCancel: () => void;
   error?: string;
   loading?: boolean;
+  existingSalespeople: string[];
 }
 
-function UserForm({ initial = {}, isEdit, onSave, onCancel, error, loading }: UserFormProps) {
+function UserForm({ initial = {}, isEdit, onSave, onCancel, error, loading, existingSalespeople }: UserFormProps) {
   const [form, setForm] = useState<UserFormData>({ ...EMPTY_FORM, ...initial });
   const [showPw, setShowPw] = useState(false);
 
@@ -113,6 +120,7 @@ function UserForm({ initial = {}, isEdit, onSave, onCancel, error, loading }: Us
     if (!form.name.trim() || !form.email.trim()) return;
     if (!isEdit && !form.password.trim()) return;
     if (form.role === "employee" && !form.mode) return;
+    if (form.role === "employee" && !form.salesperson.trim()) return;
     onSave(form);
   }
 
@@ -179,14 +187,27 @@ function UserForm({ initial = {}, isEdit, onSave, onCancel, error, loading }: Us
           </div>
         )}
 
-        {/* Salesperson — only for employees */}
+        {/* Salesperson — only for employees. Free-text + datalist suggestions,
+            so a brand-new name (new hire) is never blocked, while existing
+            names are still suggested for consistency. */}
         {form.role === "employee" && (
-          <div>
+          <div className="col-span-2">
             <label className={labelCls}>Salesperson Name *</label>
-            <select value={form.salesperson} onChange={(e) => update("salesperson", e.target.value)} className={inputCls}>
-              <option value="">— Select —</option>
-              {SALESPERSON_OPTS.map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
+            <input
+              list="salesperson-suggestions"
+              value={form.salesperson}
+              onChange={(e) => update("salesperson", e.target.value)}
+              placeholder="Type a name — existing names are suggested, or type a new one"
+              className={inputCls}
+            />
+            <datalist id="salesperson-suggestions">
+              {existingSalespeople.map((s) => <option key={s} value={s} />)}
+            </datalist>
+            {form.salesperson.trim() && !existingSalespeople.includes(form.salesperson.trim()) && (
+              <p className="text-[10px] text-accent-amber mt-1">
+                "{form.salesperson.trim()}" is a new name — double-check the spelling matches what you intend to use everywhere.
+              </p>
+            )}
           </div>
         )}
       </div>
@@ -201,7 +222,7 @@ function UserForm({ initial = {}, isEdit, onSave, onCancel, error, loading }: Us
         </button>
         <button
           onClick={handleSubmit}
-          disabled={loading || !form.name.trim() || !form.email.trim() || (!isEdit && !form.password.trim()) || (form.role === "employee" && !form.mode)}
+          disabled={loading || !form.name.trim() || !form.email.trim() || (!isEdit && !form.password.trim()) || (form.role === "employee" && !form.mode) || (form.role === "employee" && !form.salesperson.trim())}
           className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-accent text-white hover:bg-accent-hover transition-all disabled:opacity-50 disabled:cursor-not-allowed">
           <CheckCircle2 className="w-3.5 h-3.5" />
           {loading ? "Saving..." : isEdit ? "Save Changes" : "Create User"}
@@ -237,6 +258,13 @@ export default function SettingsPage() {
       </PageWrapper>
     );
   }
+
+  // Live list of existing employee salesperson names, derived from the
+  // already-loaded users list — always reflects who's actually in the
+  // system right now, with zero extra API calls and zero manual upkeep.
+  const existingSalespeople = Array.from(
+    new Set(users.filter((u) => u.role === "employee" && u.salesperson).map((u) => u.salesperson as string))
+  ).sort();
 
   function handleAdd(data: UserFormData) {
     setFormError("");
@@ -331,6 +359,7 @@ export default function SettingsPage() {
                 onCancel={() => { setAddingUser(false); setFormError(""); }}
                 error={formError}
                 loading={createUser.isPending}
+                existingSalespeople={existingSalespeople}
               />
             </div>
           )}
@@ -418,6 +447,7 @@ export default function SettingsPage() {
                       onCancel={() => { setEditingUserId(null); setFormError(""); }}
                       error={formError}
                       loading={updateUser.isPending}
+                      existingSalespeople={existingSalespeople}
                     />
                   </div>
                 )}

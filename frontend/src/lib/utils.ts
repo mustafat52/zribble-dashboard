@@ -55,7 +55,15 @@ export function statusLabel(status: PaymentStatus): string {
   }
 }
 
-export const SALESPERSON_COLORS: Record<string, string> = {
+// ─── Salesperson colors ────────────────────────────────────────────────────────
+// Known names get a fixed, stable color (kept for visual continuity with
+// existing screenshots/training). Any name NOT in this map (new hires,
+// renamed/typo'd entries) falls through to getSalespersonColor() below,
+// which deterministically derives a color from the name itself — so new
+// people always get *some* consistent color instead of a blank dot, and
+// the same new name always maps to the same color across sessions without
+// needing this file edited every time someone joins or leaves.
+const KNOWN_SALESPERSON_COLORS: Record<string, string> = {
   Aftab:   "#4F46E5",
   Sarvesh: "#0891B2",
   Firoz:   "#7C3AED",
@@ -63,6 +71,47 @@ export const SALESPERSON_COLORS: Record<string, string> = {
   Prajay:  "#D97706",
   Vinay:   "#DC2626",
 };
+
+// Small fixed palette to cycle through for unknown names — chosen to be
+// visually distinct from each other and from the 6 known colors above.
+const FALLBACK_PALETTE = [
+  "#0EA5E9", "#16A34A", "#DB2777", "#CA8A04", "#9333EA", "#0D9488", "#E11D48", "#475569",
+];
+
+function hashString(str: string): number {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = (hash << 5) - hash + str.charCodeAt(i);
+    hash |= 0; // keep as 32-bit int
+  }
+  return Math.abs(hash);
+}
+
+/**
+ * Returns a stable color for any salesperson name — known names get their
+ * fixed color, unknown names get a deterministic pick from FALLBACK_PALETTE
+ * based on a hash of the name, so it's consistent across renders/sessions
+ * without needing a database lookup or any manual list maintenance.
+ */
+export function getSalespersonColor(name: string): string {
+  if (KNOWN_SALESPERSON_COLORS[name]) return KNOWN_SALESPERSON_COLORS[name];
+  return FALLBACK_PALETTE[hashString(name) % FALLBACK_PALETTE.length];
+}
+
+// Kept exported for any existing call sites doing direct lookups — now a
+// Proxy so reads for unknown keys still resolve via getSalespersonColor()
+// instead of returning undefined. Existing code (`SALESPERSON_COLORS[x]`)
+// keeps working unchanged; only the previously-silent "unknown name → no
+// color" case is now handled instead of falling through to undefined.
+export const SALESPERSON_COLORS: Record<string, string> = new Proxy(
+  KNOWN_SALESPERSON_COLORS,
+  {
+    get(target, prop: string) {
+      if (prop in target) return target[prop];
+      return getSalespersonColor(prop);
+    },
+  }
+);
 
 export const MONTH_COLS = [
   "Jul-2026","Aug-2026","Sep-2026","Oct-2026","Nov-2026","Dec-2026",
