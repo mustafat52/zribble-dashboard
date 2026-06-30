@@ -174,59 +174,6 @@ router.patch("/:id", canWrite, async (req: Request, res: Response) => {
       }
     }
 
-    const [updated] = await prisma.$transaction([
-      prisma.contract.update({
-        where: { id: req.params.id },
-        data: changes as Parameters<typeof prisma.contract.update>[0]["data"],
-        include: { renewalMonths: true },
-      }),
-      prisma.contractEdit.create({
-        data: {
-          contractId: req.params.id,
-          changes: changes as any,
-          previousValues: previousValues as any,
-          editedBy: user.userId,
-        },
-      }),
-    ]);
-
-    res.json(updated);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Failed to update contract" });
-  }
-});
-// ── PATCH /contracts/:id ──────────────────────────────────────────────────────
-router.patch("/:id", canWrite, async (req: Request, res: Response) => {
-  try {
-    const user = req.user!;
-    const existing = await prisma.contract.findUnique({ where: { id: req.params.id } });
-
-    if (!existing) {
-      res.status(404).json({ error: "Contract not found" });
-      return;
-    }
-
-    if (user.role === "employee" && existing.salesperson !== user.salesperson) {
-      res.status(403).json({ error: "Forbidden" });
-      return;
-    }
-
-    const allowedFields = [
-      "clientName", "product", "accountManager", "contractId",
-      "profiles", "gstStatus", "dealValue", "contractTermMonths", "firstRenewalDate",
-    ];
-
-    const changes: Record<string, unknown> = {};
-    const previousValues: Record<string, unknown> = {};
-
-    for (const field of allowedFields) {
-      if (req.body[field] !== undefined && req.body[field] !== (existing as Record<string, unknown>)[field]) {
-        changes[field] = req.body[field];
-        previousValues[field] = (existing as Record<string, unknown>)[field];
-      }
-    }
-
     const ops: any[] = [
       prisma.contract.update({
         where: { id: req.params.id },
@@ -274,3 +221,40 @@ router.patch("/:id", canWrite, async (req: Request, res: Response) => {
     res.status(500).json({ error: "Failed to update contract" });
   }
 });
+
+// ── PATCH /contracts/:id/status ───────────────────────────────────────────────
+router.patch("/:id/status", canWrite, async (req: Request, res: Response) => {
+  try {
+    const user = req.user!;
+    const { contractStatus } = req.body as { contractStatus: "active" | "stopped" };
+
+    if (!["active", "stopped"].includes(contractStatus)) {
+      res.status(400).json({ error: "Invalid status" });
+      return;
+    }
+
+    const existing = await prisma.contract.findUnique({ where: { id: req.params.id } });
+
+    if (!existing) {
+      res.status(404).json({ error: "Contract not found" });
+      return;
+    }
+
+    if (user.role === "employee" && existing.salesperson !== user.salesperson) {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
+
+    const updated = await prisma.contract.update({
+      where: { id: req.params.id },
+      data: { contractStatus },
+    });
+
+    res.json(updated);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to update contract status" });
+  }
+});
+
+export default router;
