@@ -716,6 +716,28 @@ export function ClientDetailModal({ open, onClose, contracts, onMarkPayment, isS
                   </div>
                   <p className="text-[11px] text-slate-400">{onboardingPayment.paidOn} · Initial deal payment</p>
                   {onboardingPayment.notes && <p className="text-[11px] text-slate-500 mt-0.5 italic">{onboardingPayment.notes}</p>}
+
+                  {onboardingPayment.status === "partial" && (() => {
+                    const onboardDate = new Date(onboardingPayment.paidOn);
+                    const onboardPromises = clientPromises.filter(
+                      (p) => p.renewalYear === onboardDate.getFullYear() && p.renewalMonth === onboardDate.getMonth() + 1
+                    );
+                    if (!onboardPromises.length) return null;
+                    return (
+                      <div className="mt-2 pt-2 border-t border-amber-200 space-y-1">
+                        <p className="text-[10px] font-semibold text-amber-700 uppercase tracking-wide">Promised Payments</p>
+                        {onboardPromises.map((p) => (
+                          <div key={p.id} className="flex items-center justify-between px-2 py-1 bg-white border border-amber-200 rounded-lg">
+                            <span className="text-[11px] text-amber-700">
+                              {new Date(p.promisedDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                              {p.notes && <span className="italic text-amber-500"> · {p.notes}</span>}
+                            </span>
+                            <span className="text-xs font-semibold text-accent-amber">{formatCurrency(p.remainingAmount)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
             </div>
