@@ -3,6 +3,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { cn, SALESPERSON_COLORS } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
+import { useContracts } from "@/lib/api";
 import {
   LayoutDashboard, CalendarDays, CreditCard, Users, UserCircle,
   PlusCircle, TrendingUp, ChevronRight, Settings, LogOut, BarChart2,
@@ -21,19 +22,31 @@ const NAV_ITEMS = [
   ]},
 ];
 
-const SALESPEOPLE = [
-  { name: "Aftab",   accounts: 73 },
-  { name: "Sarvesh", accounts: 50 },
-  { name: "Firoz",   accounts: 37 },
-  { name: "Idris",   accounts: 12 },
-  { name: "Prajay",  accounts: 3  },
-  { name: "Vinay",   accounts: 3  },
-];
+// Fixed display order for the quick-links list — kept stable so the nav
+// doesn't reshuffle as people's account counts change, and so a salesperson
+// with 0 current accounts still has a clickable entry (e.g. a brand-new
+// hire with no contracts assigned yet). The *count* shown next to each
+// name is now computed live from useContracts() below, matching the same
+// distinct-clientName logic the Salesperson page already uses correctly —
+// previously this list also stored a frozen `accounts` number per name
+// that silently drifted from the real database count over time.
+const SALESPEOPLE_ORDER = ["Aftab", "Sarvesh", "Firoz", "Idris", "Prajay", "Vinay"];
 
 export function Sidebar() {
   const pathname  = usePathname();
   const router    = useRouter();
   const { user, canPerform, logout } = useAuth();
+  const { data: contracts = [] } = useContracts();
+
+  // Live account count per salesperson — distinct client names (matches
+  // ExecStats.tsx's "Active Accounts" calculation on the Salesperson page),
+  // not raw contract count, so a client with 2 services counts once.
+  const accountCounts: Record<string, number> = {};
+  for (const name of SALESPEOPLE_ORDER) {
+    accountCounts[name] = new Set(
+      contracts.filter((c) => c.salesperson === name).map((c) => c.clientName)
+    ).size;
+  }
 
   function handleLogout() {
     logout();
@@ -118,14 +131,14 @@ export function Sidebar() {
         <div>
           <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest px-2 mb-1.5">Executives</p>
           <ul className="space-y-0.5">
-            {SALESPEOPLE
-              .filter((s) => canPerform("view_all") || user?.salesperson === s.name)
-              .map(({ name, accounts }) => (
+            {SALESPEOPLE_ORDER
+              .filter((name) => canPerform("view_all") || user?.salesperson === name)
+              .map((name) => (
                 <li key={name}>
                   <Link href={`/salesperson?exec=${name}`} className="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm transition-all duration-150 text-slate-500 hover:text-slate-700 hover:bg-slate-50 group">
                     <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: SALESPERSON_COLORS[name] }} />
                     <span className="flex-1 text-xs">{name}</span>
-                    {canPerform("view_all") && <span className="text-[10px] text-slate-400">{accounts}</span>}
+                    {canPerform("view_all") && <span className="text-[10px] text-slate-400">{accountCounts[name]}</span>}
                   </Link>
                 </li>
               ))}
