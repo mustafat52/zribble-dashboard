@@ -12,6 +12,7 @@ import { useClient } from "@/lib/client-context";
 import { useAuth } from "@/lib/auth-context";
 import { useCreateContract } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { useSearchParams } from "next/navigation";
 import {
   User, Package, FileText, IndianRupee, CalendarDays,
   CheckCircle2, ChevronRight, AlertCircle, Sparkles,
@@ -138,6 +139,8 @@ function validate(form: NewContractForm, step: number): Record<string, string> {
 // ─── Component ────────────────────────────────────────────────────────────────
 export default function NewEntryPage() {
   const { user, canPerform } = useAuth();
+  const searchParams = useSearchParams();
+  const prefilledClientName = searchParams.get("clientName") ?? "";
 
   // ── Permission gate — only view_edit employees and super_admin can add clients ──
   if (!canPerform("add_client")) {
@@ -155,9 +158,11 @@ export default function NewEntryPage() {
   }
 
   const [step,         setStep]         = useState(1);
-  const [form,         setForm]         = useState<NewContractForm>(() =>
-    getDefaultForm(user?.role === "employee" && user?.salesperson ? user.salesperson : "Aftab")
-  );
+  const [form,         setForm]         = useState<NewContractForm>(() => ({
+    ...getDefaultForm(user?.role === "employee" && user?.salesperson ? user.salesperson : "Aftab"),
+    clientName: prefilledClientName,
+  }));
+
   const [errors,       setErrors]       = useState<Record<string, string>>({});
   const [submitted,    setSubmitted]    = useState(false);
   const [loading,      setLoading]      = useState(false);
@@ -293,7 +298,10 @@ function updatePromiseRow(idx: number, field: keyof PromiseRow, value: string) {
   }
 
   function reset() {
-    setForm(getDefaultForm(user?.role === "employee" && user?.salesperson ? user.salesperson : "Aftab"));
+    setForm({
+      ...getDefaultForm(user?.role === "employee" && user?.salesperson ? user.salesperson : "Aftab"),
+      clientName: prefilledClientName,
+    });
     setStep(1);
     setErrors({});
     setSubmitted(false);
@@ -409,6 +417,7 @@ function updatePromiseRow(idx: number, field: keyof PromiseRow, value: string) {
                       onChange={(e) => update("clientName", e.target.value)}
                       error={errors.clientName}
                       leftIcon={<User className="w-3.5 h-3.5" />}
+                      disabled={!!prefilledClientName}
                     />
                     <Select
                     label="Salesperson *"
