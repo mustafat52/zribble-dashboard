@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { PaymentStatus } from "@/types";
-import { usePromises, useDeletePromise, useOnboarding } from "@/lib/api";
+import { usePromises, useDeletePromise, useOnboarding, useNotes, useCreateNote } from "@/lib/api";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const ACCOUNT_MANAGERS = [
@@ -368,15 +368,17 @@ export function ClientDetailModal({ open, onClose, contracts, onMarkPayment, isS
 
 
   const {
-    addNote, getNotesForClient, getEffectiveAmount, recordPayment,
+    getEffectiveAmount, recordPayment,
     editContract, stopContract, reactivateContract, isContractStopped,
     getContractEdits, getEffectiveContract,
   } = useClient();
-  // Pull live promises from backend so we can show + delete them
+  // Pull live promises and notes from backend so we can show + delete/add them
   
   const { data: allPromises = [] } = usePromises();
   const deletePromiseMutation = useDeletePromise();
   const { data: onboardingPayment } = useOnboarding(contracts[0]?.clientName ?? "");
+  const { data: clientNotes = [] } = useNotes(contracts[0]?.clientName ?? "");
+  const createNoteMutation = useCreateNote();
 
   const canEdit       = canPerform("edit_client");
   const canStop       = canPerform("stop_client");
@@ -385,7 +387,7 @@ export function ClientDetailModal({ open, onClose, contracts, onMarkPayment, isS
 
   if (!contracts.length) return null;
 
-  const clientNotes = getNotesForClient(contracts[0]?.clientName ?? "");
+  
 
 
   
@@ -397,9 +399,15 @@ export function ClientDetailModal({ open, onClose, contracts, onMarkPayment, isS
   async function handleAddNote() {
     if (!newNoteText.trim()) return;
     setSavingNote(true);
-    await new Promise((r) => setTimeout(r, 300));
-    addNote({ id:`note-${Date.now()}`, clientName:primary.clientName, text:newNoteText.trim(), createdAt:new Date().toISOString(), createdBy:"Management" });
-    setNewNoteText(""); setAddingNote(false); setSavingNote(false);
+    try {
+      await createNoteMutation.mutateAsync({ clientName: primary.clientName, text: newNoteText.trim() });
+      setNewNoteText("");
+      setAddingNote(false);
+    } catch (err) {
+      console.error("Failed to save note:", err);
+    } finally {
+      setSavingNote(false);
+    }
   }
 
   function handleDeletePromise(promiseId: string) {
