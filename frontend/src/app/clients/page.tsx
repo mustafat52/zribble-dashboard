@@ -10,15 +10,13 @@ import { useAuth } from "@/lib/auth-context";
 interface PaymentTarget { contractId: string; year: number; month: number; }
 
 export default function ClientsPage() {
-  const { isClientStopped, recordPayment } = useClient();
+  const { isClientStopped, recordPayment, openClient } = useClient();
   const { user, canPerform } = useAuth();
   const salespersonFilter = canPerform("view_all") ? null : user?.salesperson ?? null;
 
-  const [selectedClient,  setSelectedClient]  = useState<Contract[] | null>(null);
-  const [paymentTarget,   setPaymentTarget]   = useState<PaymentTarget | null>(null);
+  const [paymentTarget, setPaymentTarget] = useState<PaymentTarget | null>(null);
 
   function openPayment(contractId: string, year: number, month: number) {
-    setSelectedClient(null);
     setPaymentTarget({ contractId, year, month });
   }
 
@@ -51,7 +49,7 @@ export default function ClientsPage() {
       </div>
 
       <ClientList
-        onSelectClient={setSelectedClient}
+        onSelectClient={(contracts) => openClient(contracts[0]?.clientName ?? "")}
         stoppedClients={isClientStopped}
         salespersonFilter={salespersonFilter}
       />
