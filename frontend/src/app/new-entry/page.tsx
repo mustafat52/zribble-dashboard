@@ -169,9 +169,13 @@ export default function NewEntryPage() {
   const [onboardingDate,    setOnboardingDate]    = useState(new Date().toISOString().split("T")[0]);
   const [onboardingNotes,   setOnboardingNotes]   = useState("");
 
-  // Step 3 — promise for remaining (only when partial)
-  const [promiseDate,  setPromiseDate]  = useState("");
-  const [promiseNotes, setPromiseNotes] = useState("");
+  // Step 3 — promises for remaining (only when partial) — supports multiple rows
+  interface PromiseRow { date: string; amount: string; notes: string; }
+  const [promiseRows, setPromiseRows] = useState<PromiseRow[]>([{ date: "", amount: "", notes: "" }]);
+
+function updatePromiseRow(idx: number, field: keyof PromiseRow, value: string) {
+  setPromiseRows((prev) => prev.map((row, i) => i === idx ? { ...row, [field]: value } : row));
+}
 
   const { addOnboardingPayment, addNote: addClientNote, addPromise } = useClient();
 
@@ -243,20 +247,25 @@ export default function NewEntryPage() {
       }
 
       // 3. Save promise if partial payment and promise date given.
-      if (isPartial && promiseDate) {
-        addPromise({
-          id:             `p-onboard-${Date.now()}`,
-          contractId:     realContractId,
-          clientName:     form.clientName,
-          salesperson:    form.salesperson,
-          renewalYear:    new Date(onboardingDate).getFullYear(),
-          renewalMonth:   new Date(onboardingDate).getMonth() + 1,
-          paidAmount,
-          remainingAmount,
-          promisedDate:   promiseDate,
-          notes:          promiseNotes || `Onboarding balance of ${formatCurrency(remainingAmount)}`,
-          createdAt:      new Date().toISOString(),
-        });
+      
+      if (isPartial) {
+        promiseRows
+          .filter((r) => r.date)
+          .forEach((r, idx) => {
+            addPromise({
+              id:             `p-onboard-${Date.now()}-${idx}`,
+              contractId:     realContractId,
+              clientName:     form.clientName,
+              salesperson:    form.salesperson,
+              renewalYear:    new Date(onboardingDate).getFullYear(),
+              renewalMonth:   new Date(onboardingDate).getMonth() + 1,
+              paidAmount,
+              remainingAmount: Number(r.amount) || 0,
+              promisedDate:   r.date,
+              notes:          r.notes || `Onboarding balance of ${formatCurrency(remainingAmount)}`,
+              createdAt:      new Date().toISOString(),
+            });
+          });
       }
 
       // 4. Save initial note.
@@ -289,8 +298,7 @@ export default function NewEntryPage() {
     setOnboardingAmount("");
     setOnboardingDate(new Date().toISOString().split("T")[0]);
     setOnboardingNotes("");
-    setPromiseDate("");
-    setPromiseNotes("");
+    setPromiseRows([{ date: "", amount: "", notes: "" }]);
   }
 
   const color = SALESPERSON_COLORS[form.salesperson] ?? "#3B82F6";
@@ -308,10 +316,9 @@ export default function NewEntryPage() {
             <span className="font-semibold text-gray-300">{form.clientName}</span> has been added
             under <span className="font-semibold text-gray-300">{form.salesperson}</span>.
           </p>
-          {isPartial && promiseDate && (
+          {isPartial && promiseRows.some((r) => r.date) && (
             <p className="text-xs text-amber-400 mb-2">
-              Promise of {formatCurrency(remainingAmount)} recorded for{" "}
-              {new Date(promiseDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+              {promiseRows.filter((r) => r.date).length} promise{promiseRows.filter((r) => r.date).length > 1 ? "s" : ""} recorded for the remaining {formatCurrency(remainingAmount)}
             </p>
           )}
           <p className="text-xs text-gray-600 mb-8">
@@ -655,41 +662,76 @@ export default function NewEntryPage() {
                           <div className="flex items-center gap-2">
                             <Clock className="w-4 h-4 text-accent-amber" />
                             <p className="text-sm font-semibold text-amber-800">
-                              Promise for Remaining {formatCurrency(remainingAmount)}
+                              Promises for Remaining {formatCurrency(remainingAmount)}
                             </p>
                           </div>
                           <p className="text-xs text-amber-700">
-                            When has the client promised to pay the remaining amount? This will appear on the renewal calendar on that date.
+                            When has the client promised to pay the remaining amount? Split it across multiple dates if needed — each will appear on the renewal calendar.
                           </p>
 
-                          <Input
-                            label="Promised Payment Date"
-                            type="date"
-                            value={promiseDate}
-                            onChange={(e) => setPromiseDate(e.target.value)}
-                            hint="This date will show on the calendar as a payment promise"
-                          />
-
-                          <Input
-                            label="Promise Notes (optional)"
-                            placeholder="e.g. Cheque on 15th, will transfer after GST filing"
-                            value={promiseNotes}
-                            onChange={(e) => setPromiseNotes(e.target.value)}
-                            leftIcon={<FileText className="w-3.5 h-3.5" />}
-                          />
-
-                          {promiseDate ? (
-                            <div className="flex items-start gap-2 px-3 py-2.5 bg-white border border-amber-200 rounded-lg">
-                              <AlertCircle className="w-3.5 h-3.5 text-accent-amber mt-0.5 flex-shrink-0" />
-                              <p className="text-xs text-amber-700">
-                                <span className="font-semibold">{formatCurrency(remainingAmount)}</span> from{" "}
-                                <span className="font-semibold">{form.clientName || "this client"}</span> will appear on the calendar on{" "}
-                                <span className="font-semibold">
-                                  {new Date(promiseDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
-                                </span>
-                              </p>
+                          <div className="border border-amber-200 bg-white rounded-xl overflow-hidden">
+                            <div className="divide-y divide-amber-100">
+                              {promiseRows.map((row, idx) => (
+                                <div key={idx} className="p-3 space-y-2">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-[10px] font-semibold text-amber-700 uppercase tracking-wide">
+                                      Promise {promiseRows.length > 1 ? `#${idx + 1}` : ""}
+                                    </span>
+                                    {promiseRows.length > 1 && (
+                                      <button
+                                        type="button"
+                                        onClick={() => setPromiseRows((prev) => prev.filter((_, i) => i !== idx))}
+                                        className="text-amber-400 hover:text-accent-red transition-colors p-0.5 rounded"
+                                      >
+                                        ✕
+                                      </button>
+                                    )}
+                                  </div>
+                                  <div className="grid grid-cols-2 gap-2">
+                                    <Input
+                                      label="Promised Date"
+                                      type="date"
+                                      value={row.date}
+                                      onChange={(e) => updatePromiseRow(idx, "date", e.target.value)}
+                                    />
+                                    <Input
+                                      label="Amount (₹)"
+                                      type="number"
+                                      placeholder="0"
+                                      value={row.amount}
+                                      onChange={(e) => updatePromiseRow(idx, "amount", e.target.value)}
+                                      leftIcon={<IndianRupee className="w-3.5 h-3.5" />}
+                                    />
+                                  </div>
+                                  <Input
+                                    label="Note (optional)"
+                                    placeholder="e.g. Cheque on 15th, NEFT transfer"
+                                    value={row.notes}
+                                    onChange={(e) => updatePromiseRow(idx, "notes", e.target.value)}
+                                    leftIcon={<FileText className="w-3.5 h-3.5" />}
+                                  />
+                                  {row.date && (
+                                    <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
+                                      📅 Will appear on renewal calendar on{" "}
+                                      <strong>{new Date(row.date).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</strong>
+                                      {row.amount ? ` · ${formatCurrency(Number(row.amount))}` : ""}
+                                    </p>
+                                  )}
+                                </div>
+                              ))}
                             </div>
-                          ) : (
+                            <div className="px-3 py-2.5 bg-amber-100/60 border-t border-amber-200 flex items-center justify-end">
+                              <button
+                                type="button"
+                                onClick={() => setPromiseRows((prev) => [...prev, { date: "", amount: "", notes: "" }])}
+                                className="flex items-center gap-1 text-xs font-semibold text-amber-700 hover:text-amber-900 transition-colors"
+                              >
+                                + Add another date
+                              </button>
+                            </div>
+                          </div>
+
+                          {!promiseRows.some((r) => r.date) && (
                             <p className="text-xs text-amber-600 italic">
                               ⚠ No promise date set — the remaining amount won&apos;t show on the calendar
                             </p>
@@ -730,8 +772,8 @@ export default function NewEntryPage() {
                             ? `Partial — ${formatCurrency(paidAmount)} of ${formatCurrency(form.dealValue)}`
                             : `Collected — ${formatCurrency(paidAmount || form.dealValue)}`
                         ],
-                        ...(isPartial && promiseDate
-                          ? [["Promise Date", new Date(promiseDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })]]
+                        ...(isPartial && promiseRows.some((r) => r.date)
+                          ? [["Promise Dates", promiseRows.filter((r) => r.date).map((r) => new Date(r.date).toLocaleDateString("en-IN", { day: "numeric", month: "short" })).join(", ")]]
                           : []
                         ),
                         ...(isPartial && remainingAmount > 0
