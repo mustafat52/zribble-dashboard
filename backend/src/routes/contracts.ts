@@ -196,18 +196,10 @@ router.patch("/:id", canWrite, async (req: Request, res: Response) => {
     res.status(500).json({ error: "Failed to update contract" });
   }
 });
-
-// ── PATCH /contracts/:id/status ───────────────────────────────────────────────
-router.patch("/:id/status", canWrite, async (req: Request, res: Response) => {
+// ── PATCH /contracts/:id ──────────────────────────────────────────────────────
+router.patch("/:id", canWrite, async (req: Request, res: Response) => {
   try {
     const user = req.user!;
-    const { contractStatus } = req.body as { contractStatus: "active" | "stopped" };
-
-    if (!["active", "stopped"].includes(contractStatus)) {
-      res.status(400).json({ error: "Invalid status" });
-      return;
-    }
-
     const existing = await prisma.contract.findUnique({ where: { id: req.params.id } });
 
     if (!existing) {
@@ -220,16 +212,65 @@ router.patch("/:id/status", canWrite, async (req: Request, res: Response) => {
       return;
     }
 
-    const updated = await prisma.contract.update({
+    const allowedFields = [
+      "clientName", "product", "accountManager", "contractId",
+      "profiles", "gstStatus", "dealValue", "contractTermMonths", "firstRenewalDate",
+    ];
+
+    const changes: Record<string, unknown> = {};
+    const previousValues: Record<string, unknown> = {};
+
+    for (const field of allowedFields) {
+      if (req.body[field] !== undefined && req.body[field] !== (existing as Record<string, unknown>)[field]) {
+        changes[field] = req.body[field];
+        previousValues[field] = (existing as Record<string, unknown>)[field];
+      }
+    }
+
+    const ops: any[] = [
+      prisma.contract.update({
+        where: { id: req.params.id },
+        data: changes as Parameters<typeof prisma.contract.update>[0]["data"],
+        include: { renewalMonths: true },
+      }),
+      prisma.contractEdit.create({
+        data: {
+          contractId: req.params.id,
+          changes: changes as any,
+          previousValues: previousValues as any,
+          editedBy: user.userId,
+        },
+      }),
+    ];
+
+    // Bug #20 fix: a dealValue edit must cascade into every renewal month
+    // that hasn't been collected yet, otherwise the renewals table, dashboard
+    // pipeline, and calendar all keep showing the pre-edit amount forever.
+    if ("dealValue" in changes) {
+      const newAmount = Number(changes.dealValue);
+      ops.push(
+        prisma.renewalMonth.updateMany({
+          where: {
+            contractId: req.params.id,
+            status: { notIn: ["collected", "waived"] },
+          },
+          data: { amount: newAmount },
+        })
+      );
+    }
+
+    const [updated] = await prisma.$transaction(ops);
+
+    // Re-fetch with renewalMonths so the response reflects the cascade
+    // (the destructured `updated` above is from the first op, pre-cascade).
+    const final = await prisma.contract.findUnique({
       where: { id: req.params.id },
-      data: { contractStatus },
+      include: { renewalMonths: { orderBy: [{ year: "asc" }, { month: "asc" }] } },
     });
 
-    res.json(updated);
+    res.json(final ?? updated);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Failed to update contract status" });
+    res.status(500).json({ error: "Failed to update contract" });
   }
 });
-
-export default router;
