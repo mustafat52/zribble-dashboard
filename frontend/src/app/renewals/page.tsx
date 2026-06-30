@@ -8,6 +8,7 @@ import { PaymentModal, PaymentPromise } from "@/components/renewals/PaymentModal
 import { formatCurrency, getMonthShort } from "@/lib/utils";
 import { CalendarDays, List } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { usePromises } from "@/lib/api";
 import { useClient } from "@/lib/client-context";
 import { useAuth } from "@/lib/auth-context";
 
@@ -20,7 +21,8 @@ export default function RenewalsPage() {
   const [view,          setView]          = useState<ViewMode>("calendar");
   const [paymentTarget, setPaymentTarget] = useState<PaymentTarget | null>(null);
 
-  const { promises: contextPromises, recordPayment } = useClient();
+  const { recordPayment } = useClient();
+  const { data: contextPromises = [] } = usePromises();
   const { user, canPerform } = useAuth();
 
   // Filter by salesperson for employee logins
