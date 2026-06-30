@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { PaymentStatus } from "@/types";
-import { usePromises, useDeletePromise } from "@/lib/api";
+import { usePromises, useDeletePromise, useOnboarding } from "@/lib/api";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const ACCOUNT_MANAGERS = [
@@ -452,24 +452,28 @@ export function ClientDetailModal({ open, onClose, contracts, onMarkPayment, isS
 
 
   const {
-    addNote, getNotesForClient, getOnboardingPayment, getEffectiveAmount, recordPayment,
+    addNote, getNotesForClient, getEffectiveAmount, recordPayment,
     editContract, stopContract, reactivateContract, isContractStopped,
     addContract, getContractEdits, getEffectiveContract,
   } = useClient();
 
   // Pull live promises from backend so we can show + delete them
+  
   const { data: allPromises = [] } = usePromises();
   const deletePromiseMutation = useDeletePromise();
+  const { data: onboardingPayment } = useOnboarding(contracts[0]?.clientName ?? "");
+
+  const canEdit       = canPerform("edit_client");
+  const canStop       = canPerform("stop_client");
+  const canPay        = canPerform("record_payment");
+  const canAddClient  = canPerform("add_client");
 
   if (!contracts.length) return null;
 
-  const canEdit      = canPerform("edit_client");
-  const canStop      = canPerform("stop_client");
-  const canPay       = canPerform("record_payment");
-  const canAddClient = canPerform("add_client");
+  const clientNotes = getNotesForClient(contracts[0]?.clientName ?? "");
 
-  const clientNotes       = getNotesForClient(contracts[0]?.clientName ?? "");
-  const onboardingPayment = getOnboardingPayment(contracts[0]?.clientName ?? "");
+
+  
 
   // Promises scoped to this client's contracts
   const contractIds = new Set(contracts.map((c) => c.id));
