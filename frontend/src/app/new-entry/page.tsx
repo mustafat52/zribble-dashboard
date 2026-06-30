@@ -100,18 +100,20 @@ function calcRenewalSchedule(
 }
 
 // ─── Default form state ───────────────────────────────────────────────────────
-const DEFAULT_FORM: NewContractForm = {
-  salesperson:        "Aftab",
-  clientName:         "",
-  product:            "DM Single",
-  accountManager:     "Gaurav",
-  contractId:         "",
-  profiles:           1,
-  gstStatus:          "N",
-  dealValue:          0,
-  contractTermMonths: 3,
-  firstRenewalDate:   "",
-};
+function getDefaultForm(salesperson: string): NewContractForm {
+  return {
+    salesperson:        salesperson as NewContractForm["salesperson"],
+    clientName:         "",
+    product:            "DM Single",
+    accountManager:     "Gaurav",
+    contractId:         "",
+    profiles:           1,
+    gstStatus:          "N",
+    dealValue:          0,
+    contractTermMonths: 3,
+    firstRenewalDate:   "",
+  };
+}
 
 // ─── Validation ───────────────────────────────────────────────────────────────
 function validate(form: NewContractForm, step: number): Record<string, string> {
@@ -153,7 +155,9 @@ export default function NewEntryPage() {
   }
 
   const [step,         setStep]         = useState(1);
-  const [form,         setForm]         = useState<NewContractForm>(DEFAULT_FORM);
+  const [form,         setForm]         = useState<NewContractForm>(() =>
+    getDefaultForm(user?.role === "employee" && user?.salesperson ? user.salesperson : "Aftab")
+  );
   const [errors,       setErrors]       = useState<Record<string, string>>({});
   const [submitted,    setSubmitted]    = useState(false);
   const [loading,      setLoading]      = useState(false);
@@ -289,7 +293,7 @@ function updatePromiseRow(idx: number, field: keyof PromiseRow, value: string) {
   }
 
   function reset() {
-    setForm(DEFAULT_FORM);
+    setForm(getDefaultForm(user?.role === "employee" && user?.salesperson ? user.salesperson : "Aftab"));
     setStep(1);
     setErrors({});
     setSubmitted(false);
@@ -407,11 +411,12 @@ function updatePromiseRow(idx: number, field: keyof PromiseRow, value: string) {
                       leftIcon={<User className="w-3.5 h-3.5" />}
                     />
                     <Select
-                      label="Salesperson *"
-                      options={SALESPERSON_OPTS}
-                      value={form.salesperson}
-                      onChange={(e) => update("salesperson", e.target.value as NewContractForm["salesperson"])}
-                      error={errors.salesperson}
+                    label="Salesperson *"
+                    options={SALESPERSON_OPTS}
+                    value={form.salesperson}
+                    onChange={(e) => update("salesperson", e.target.value as NewContractForm["salesperson"])}
+                    error={errors.salesperson}
+                    disabled={user?.role === "employee"}
                     />
                     <Select
                       label="Account Manager *"
