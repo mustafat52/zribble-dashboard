@@ -38,7 +38,7 @@ interface ClientContextValue {
   stopContract: (contractId: string) => void;
   reactivateContract: (contractId: string) => void;
   isContractStopped: (contractId: string) => boolean;
-  addContract: (contract: Contract) => void;
+  addContract: (contract: Omit<Contract, "id" | "createdAt" | "updatedAt" | "renewalSchedule"> & { renewalSchedule?: { year: number; month: number; amount: number }[] }) => Promise<Contract>;
   getContractEdits: (contractId: string) => ContractEdit[];
   getEffectiveContract: (contract: Contract) => Contract;
 }
@@ -277,14 +277,12 @@ export function ClientProvider({ children }: { children: ReactNode }) {
     patchContractMutation.mutate({ id: contractId, changes: changes as Record<string, unknown> });
   }, [patchContractMutation]);
 
-  const addContract = useCallback((contract: Contract) => {
-    setAdditionalContracts((prev) => [...prev, contract]);
-    setSelectedContracts((prev) => [...prev, contract]);
-    // Hit backend
-    createContractMutation.mutate({
+  const addContract = useCallback(async (contract: Omit<Contract, "id" | "createdAt" | "updatedAt" | "renewalSchedule"> & { renewalSchedule?: { year: number; month: number; amount: number }[] }) => {
+    const created = await createContractMutation.mutateAsync({
       ...contract,
-      renewalSchedule: (contract.renewalSchedule ?? []) as any,
+      renewalSchedule: contract.renewalSchedule ?? [],
     });
+    return created;
   }, [createContractMutation]);
 
   const getContractEdits = useCallback(

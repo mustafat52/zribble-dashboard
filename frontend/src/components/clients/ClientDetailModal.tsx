@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { PaymentStatus } from "@/types";
-import { usePromises, useDeletePromise, useOnboarding } from "@/lib/api";
+import { usePromises, useDeletePromise, useOnboarding, useCreateContract } from "@/lib/api";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const ACCOUNT_MANAGERS = [
@@ -115,13 +115,34 @@ function ContractEditForm({ contract, onSave, onCancel }: ContractEditFormProps)
 }
 
 // ─── Add Service Form ─────────────────────────────────────────────────────────
+interface PromiseRow { date: string; amount: string; notes: string; }
+
 interface AddServiceFormProps {
   clientName: string; salesperson: string;
-  onSave: (contract: Omit<Contract, "id" | "renewalSchedule" | "createdAt" | "updatedAt">) => void;
+  onSave: (data: {
+    contract: Omit<Contract, "id" | "renewalSchedule" | "createdAt" | "updatedAt"> & { renewalSchedule: { year: number; month: number; amount: number }[] };
+    onboarding: { status: "collected" | "partial" | "not_collected"; amount: number; date: string; notes: string } | null;
+    promises: PromiseRow[];
+  }) => void;
   onCancel: () => void;
+  loading: boolean;
 }
 
-function AddServiceForm({ clientName, salesperson, onSave, onCancel }: AddServiceFormProps) {
+function calcRenewalSchedule(firstRenewalDate: string, dealValue: number, termMonths: number) {
+  if (!firstRenewalDate || !dealValue || !termMonths) return [];
+  const start = new Date(firstRenewalDate);
+  if (isNaN(start.getTime())) return [];
+  const schedule: { year: number; month: number; amount: number }[] = [];
+  const endDate = new Date("2028-12-31");
+  let current = new Date(start);
+  while (current <= endDate) {
+    schedule.push({ year: current.getFullYear(), month: current.getMonth() + 1, amount: dealValue });
+    current.setMonth(current.getMonth() + termMonths);
+  }
+  return schedule;
+}
+
+function AddServiceForm({ clientName, salesperson, onSave, onCancel, loading }: AddServiceFormProps) {
   const [product,      setProduct]      = useState("GMB Single");
   const [dealValue,    setDealValue]    = useState("");
   const [am,           setAm]           = useState("Khushi");
@@ -131,9 +152,36 @@ function AddServiceForm({ clientName, salesperson, onSave, onCancel }: AddServic
   const [gst,          setGst]          = useState<"Y"|"N">("N");
   const [firstRenewal, setFirstRenewal] = useState("");
 
+  const [onboardingStatus, setOnboardingStatus] = useState<"collected"|"partial"|"not_collected">("collected");
+  const [onboardingAmount, setOnboardingAmount] = useState("");
+  const [onboardingDate,   setOnboardingDate]   = useState(new Date().toISOString().split("T")[0]);
+  const [onboardingNotes,  setOnboardingNotes]  = useState("");
+  const [promiseRows,      setPromiseRows]      = useState<PromiseRow[]>([{ date: "", amount: "", notes: "" }]);
+
+  const dealValueNum    = Number(dealValue) || 0;
+  const paidAmount      = Number(onboardingAmount) || 0;
+  const remainingAmount = dealValueNum > 0 ? Math.max(dealValueNum - paidAmount, 0) : 0;
+  const isPartial       = onboardingStatus === "partial" && paidAmount > 0 && remainingAmount > 0;
+
+  function updatePromiseRow(idx: number, field: keyof PromiseRow, value: string) {
+    setPromiseRows((prev) => prev.map((row, i) => i === idx ? { ...row, [field]: value } : row));
+  }
+
   function handleSave() {
     if (!dealValue || !firstRenewal) return;
-    onSave({ salesperson: salesperson as any, clientName, product, accountManager: am, contractId: contractId || undefined, profiles: Number(profiles), gstStatus: gst, dealValue: Number(dealValue), contractTermMonths: Number(term), firstRenewalDate: firstRenewal });
+    const renewalSchedule = calcRenewalSchedule(firstRenewal, dealValueNum, Number(term));
+    onSave({
+      contract: {
+        salesperson: salesperson as any, clientName, product, accountManager: am,
+        contractId: contractId || undefined, profiles: Number(profiles), gstStatus: gst,
+        dealValue: dealValueNum, contractTermMonths: Number(term), firstRenewalDate: firstRenewal,
+        renewalSchedule,
+      },
+      onboarding: onboardingStatus !== "not_collected" && paidAmount > 0
+        ? { status: onboardingStatus, amount: paidAmount, date: onboardingDate, notes: onboardingNotes }
+        : null,
+      promises: isPartial ? promiseRows.filter((r) => r.date) : [],
+    });
   }
 
   const inputCls = "w-full px-3 py-2 h-9 text-sm bg-white border border-slate-200 rounded-lg focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/20 text-slate-700";
@@ -192,9 +240,90 @@ function AddServiceForm({ clientName, salesperson, onSave, onCancel }: AddServic
           </div>
         </div>
       </div>
+
+      {/* Onboarding payment for this service */}
+      <div className="border-t border-emerald-200 pt-4 space-y-3">
+        <p className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Signing / Onboarding Payment</p>
+        <div className="flex gap-2">
+          {(["collected","partial","not_collected"] as const).map((s) => (
+            <button key={s} type="button" onClick={() => setOnboardingStatus(s)}
+              className={cn("flex-1 py-2 rounded-lg text-xs font-medium border transition-all",
+                onboardingStatus === s
+                  ? s === "collected" ? "bg-accent-green text-white border-accent-green"
+                  : s === "partial"   ? "bg-accent-amber text-white border-accent-amber"
+                  :                     "bg-accent-red text-white border-accent-red"
+                  : "bg-white text-slate-500 border-slate-200 hover:border-slate-300")}>
+              {s === "collected" ? "✓ Fully Collected" : s === "partial" ? "⚡ Partial" : "✗ Not Collected"}
+            </button>
+          ))}
+        </div>
+        {onboardingStatus !== "not_collected" && (
+          <>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className={labelCls}>{onboardingStatus === "partial" ? "Amount Received (₹) *" : "Amount Collected (₹) *"}</label>
+                <div className="relative">
+                  <IndianRupee className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+                  <input type="number" min={1} value={onboardingAmount} onChange={(e) => setOnboardingAmount(e.target.value)}
+                    placeholder={dealValueNum > 0 ? `Deal value: ${formatCurrency(dealValueNum)}` : "Enter amount"} className={cn(inputCls, "pl-7")} />
+                </div>
+              </div>
+              <div>
+                <label className={labelCls}>Date of Payment *</label>
+                <input type="date" value={onboardingDate} onChange={(e) => setOnboardingDate(e.target.value)} className={inputCls} />
+              </div>
+            </div>
+            <input type="text" value={onboardingNotes} onChange={(e) => setOnboardingNotes(e.target.value)}
+              placeholder="Notes — e.g. NEFT ref, cheque no..." className={inputCls} />
+            {paidAmount > 0 && (
+              <div className={cn("px-3 py-2 rounded-lg border text-xs font-medium",
+                remainingAmount === 0 ? "bg-accent-greenLight border-emerald-200 text-accent-green" : "bg-accent-amberLight border-amber-200 text-accent-amber")}>
+                {remainingAmount === 0 ? "Fully paid — will be marked Collected" : `Partial — ${formatCurrency(remainingAmount)} still outstanding`}
+              </div>
+            )}
+          </>
+        )}
+
+        {isPartial && (
+          <div className="border border-amber-200 bg-accent-amberLight rounded-xl p-3 space-y-3">
+            <p className="text-xs font-semibold text-amber-800">Promises for Remaining {formatCurrency(remainingAmount)}</p>
+            <div className="border border-amber-200 bg-white rounded-xl overflow-hidden">
+              <div className="divide-y divide-amber-100">
+                {promiseRows.map((row, idx) => (
+                  <div key={idx} className="p-2.5 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-semibold text-amber-700 uppercase tracking-wide">Promise {promiseRows.length > 1 ? `#${idx + 1}` : ""}</span>
+                      {promiseRows.length > 1 && (
+                        <button type="button" onClick={() => setPromiseRows((prev) => prev.filter((_, i) => i !== idx))}
+                          className="text-amber-400 hover:text-accent-red transition-colors p-0.5 rounded">
+                          <X className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <input type="date" value={row.date} onChange={(e) => updatePromiseRow(idx, "date", e.target.value)} className={inputCls} />
+                      <input type="number" placeholder="Amount (₹)" value={row.amount} onChange={(e) => updatePromiseRow(idx, "amount", e.target.value)} className={inputCls} />
+                    </div>
+                    <input type="text" placeholder="Note (optional)" value={row.notes} onChange={(e) => updatePromiseRow(idx, "notes", e.target.value)} className={inputCls} />
+                  </div>
+                ))}
+              </div>
+              <div className="px-3 py-2 bg-amber-100/60 border-t border-amber-200 flex justify-end">
+                <button type="button" onClick={() => setPromiseRows((prev) => [...prev, { date: "", amount: "", notes: "" }])}
+                  className="flex items-center gap-1 text-xs font-semibold text-amber-700 hover:text-amber-900">
+                  <Plus className="w-3.5 h-3.5" /> Add another date
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
       <div className="flex items-center justify-end gap-2 pt-1 border-t border-slate-100">
-        <Button variant="ghost" size="sm" onClick={onCancel}>Cancel</Button>
-        <Button size="sm" onClick={handleSave} disabled={!isValid} variant="success"><Plus className="w-3.5 h-3.5" /> Add Service</Button>
+        <Button variant="ghost" size="sm" onClick={onCancel} disabled={loading}>Cancel</Button>
+        <Button size="sm" onClick={handleSave} disabled={!isValid || loading} loading={loading} variant="success">
+          <Plus className="w-3.5 h-3.5" /> Add Service
+        </Button>
       </div>
     </div>
   );
@@ -443,6 +572,7 @@ export function ClientDetailModal({ open, onClose, contracts, onMarkPayment, isS
   const [editMode,          setEditMode]          = useState(false);
   const [editingContractId, setEditingContractId] = useState<string|null>(null);
   const [addingService,     setAddingService]     = useState(false);
+  const [addingServiceLoad, setAddingServiceLoad]  = useState(false);
   const [deletingPromise,   setDeletingPromise]   = useState<string|null>(null);
 
   
@@ -455,6 +585,7 @@ export function ClientDetailModal({ open, onClose, contracts, onMarkPayment, isS
     addNote, getNotesForClient, getEffectiveAmount, recordPayment,
     editContract, stopContract, reactivateContract, isContractStopped,
     addContract, getContractEdits, getEffectiveContract,
+    addOnboardingPayment, addPromise,
   } = useClient();
 
   // Pull live promises from backend so we can show + delete them
@@ -517,18 +648,51 @@ export function ClientDetailModal({ open, onClose, contracts, onMarkPayment, isS
     setEditingContractId(null);
   }
 
-  function handleAddService(data: Omit<Contract, "id"|"renewalSchedule"|"createdAt"|"updatedAt">) {
-    const newContract: Contract = {
-      ...data,
-      id:              `c-new-${Date.now()}`,
-      renewalSchedule: [],
-      createdAt:       new Date().toISOString(),
-      updatedAt:       new Date().toISOString(),
-    };
-    addContract(newContract);
-    setAddingService(false);
-  }
+  async function handleAddService(data: {
+    contract: Omit<Contract, "id" | "renewalSchedule" | "createdAt" | "updatedAt"> & { renewalSchedule: { year: number; month: number; amount: number }[] };
+    onboarding: { status: "collected" | "partial" | "not_collected"; amount: number; date: string; notes: string } | null;
+    promises: { date: string; amount: string; notes: string }[];
+  }) {
+    setAddingServiceLoad(true);
+    try {
+      const created = await addContract(data.contract);
+      const realContractId = created.id;
 
+      if (data.onboarding) {
+        addOnboardingPayment({
+          contractId:      realContractId,
+          clientName:      data.contract.clientName,
+          salesperson:     data.contract.salesperson,
+          status:          data.onboarding.status,
+          amountCollected: data.onboarding.amount,
+          paidOn:          data.onboarding.date,
+          notes:           data.onboarding.notes || undefined,
+        });
+      }
+
+      data.promises.forEach((p, idx) => {
+        addPromise({
+          id:             `p-service-${Date.now()}-${idx}`,
+          contractId:     realContractId,
+          clientName:     data.contract.clientName,
+          salesperson:    data.contract.salesperson,
+          renewalYear:    new Date(data.onboarding?.date ?? new Date()).getFullYear(),
+          renewalMonth:   new Date(data.onboarding?.date ?? new Date()).getMonth() + 1,
+          paidAmount:      data.onboarding?.amount ?? 0,
+          remainingAmount: Number(p.amount) || 0,
+          promisedDate:   p.date,
+          notes:          p.notes || undefined,
+          createdAt:      new Date().toISOString(),
+        });
+      });
+
+      setAddingService(false);
+    } catch (err) {
+      console.error("Failed to add service:", err);
+    } finally {
+      setAddingServiceLoad(false);
+    }
+  }
   return (
     <Modal
       open={open}
@@ -688,7 +852,7 @@ export function ClientDetailModal({ open, onClose, contracts, onMarkPayment, isS
                   <Plus className="w-4 h-4"/> Add New Service
                 </button>
               ) : (
-                <AddServiceForm clientName={primary.clientName} salesperson={primary.salesperson} onSave={handleAddService} onCancel={()=>setAddingService(false)} />
+                <AddServiceForm clientName={primary.clientName} salesperson={primary.salesperson} onSave={handleAddService} onCancel={()=>setAddingService(false)} loading={addingServiceLoad} />
               )}
             </div>
           )}
