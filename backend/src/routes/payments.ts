@@ -40,6 +40,9 @@ router.post("/", canWrite, async (req: Request, res: Response) => {
       return;
     }
 
+    
+    const dbUser = await prisma.user.findUnique({ where: { id: user.userId } });
+
     // Create payment
     const payment = await prisma.payment.create({
       data: {
@@ -49,11 +52,10 @@ router.post("/", canWrite, async (req: Request, res: Response) => {
         amount: Number(amount),
         paidOn,
         notes: notes ?? null,
-        recordedBy: user.userId,
+        recordedBy: dbUser?.name ?? "Unknown",
         type: type ?? "renewal",
       },
     });
-
     // Recalculate RenewalMonth status if it's a renewal payment
     if (!type || type === "renewal") {
       await recalcRenewalStatus(contractId, Number(renewalYear), Number(renewalMonth));
