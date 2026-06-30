@@ -445,9 +445,11 @@ export function ClientDetailModal({ open, onClose, contracts, onMarkPayment, isS
   const [addingService,     setAddingService]     = useState(false);
   const [deletingPromise,   setDeletingPromise]   = useState<string|null>(null);
 
-  if (!contracts.length) return null;
+  
 
   const { canPerform } = useAuth();
+
+
 
   const {
     addNote, getNotesForClient, getOnboardingPayment, getEffectiveAmount, recordPayment,
@@ -458,6 +460,8 @@ export function ClientDetailModal({ open, onClose, contracts, onMarkPayment, isS
   // Pull live promises from backend so we can show + delete them
   const { data: allPromises = [] } = usePromises();
   const deletePromiseMutation = useDeletePromise();
+
+  if (!contracts.length) return null;
 
   const canEdit      = canPerform("edit_client");
   const canStop      = canPerform("stop_client");
