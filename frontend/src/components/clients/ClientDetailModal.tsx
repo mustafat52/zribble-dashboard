@@ -360,6 +360,7 @@ export function ClientDetailModal({ open, onClose, contracts, onMarkPayment, isS
   const [editingContractId, setEditingContractId] = useState<string|null>(null);
   const [addingService,     setAddingService]     = useState(false);
   const [deletingPromise,   setDeletingPromise]   = useState<string|null>(null);
+  const [showPaymentLog,    setShowPaymentLog]    = useState(false);
 
   
 
@@ -427,6 +428,23 @@ export function ClientDetailModal({ open, onClose, contracts, onMarkPayment, isS
 
   const byYear: Record<number, typeof allRenewals> = {};
   allRenewals.forEach((r) => { if(!byYear[r.year]) byYear[r.year]=[]; byYear[r.year].push(r); });
+
+
+  // All real payments ever made for this client, newest first
+  const allPaymentLog = contracts
+    .flatMap((c) =>
+      (c.renewalSchedule ?? []).flatMap((r) =>
+        (r.payments ?? []).map((p: any) => ({
+          ...p,
+          product:      c.product,
+          renewalYear:  r.year,
+          renewalMonth: r.month,
+        }))
+      )
+    )
+    .sort((a: any, b: any) => new Date(b.paidOn).getTime() - new Date(a.paidOn).getTime());
+
+
 
   function handlePaymentSave(data: any) {
     recordPayment(data);
@@ -757,6 +775,80 @@ export function ClientDetailModal({ open, onClose, contracts, onMarkPayment, isS
             ))}
           </div>
         </div>
+        
+        {/* Payment Log */}
+        <div className="border border-slate-200 rounded-xl overflow-hidden">
+          <button
+            onClick={() => setShowPaymentLog((v) => !v)}
+            className="w-full flex items-center justify-between px-4 py-3 bg-slate-50 border-b border-slate-200 hover:bg-slate-100 transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              <CreditCard className="w-3.5 h-3.5 text-slate-500" />
+              <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Payment Log</p>
+              {allPaymentLog.length > 0 && (
+                <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-accent-light text-accent border border-accent-border">
+                  {allPaymentLog.length}
+                </span>
+              )}
+              {onboardingPayment && onboardingPayment.status !== "not_collected" && (
+                <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-accent-greenLight text-accent-green border border-emerald-200">
+                  +1 onboarding
+                </span>
+              )}
+            </div>
+            <ChevronUp className={cn("w-3.5 h-3.5 text-slate-400 transition-transform", !showPaymentLog && "rotate-180")} />
+          </button>
+
+          {showPaymentLog && (
+            <div className="divide-y divide-slate-100">
+              {/* Onboarding entry */}
+              {onboardingPayment && onboardingPayment.status !== "not_collected" && (
+                <div className="flex items-center gap-3 px-4 py-3 bg-accent-greenLight/30">
+                  <div className="w-1.5 h-8 rounded-full bg-accent-green flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-semibold text-slate-700">Onboarding Payment</p>
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      {onboardingPayment.paidOn}
+                      {onboardingPayment.notes && <span className="italic"> · {onboardingPayment.notes}</span>}
+                    </p>
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    <p className="text-sm font-bold text-accent-green">{formatCurrency(onboardingPayment.amountCollected)}</p>
+                    <p className="text-[10px] text-slate-400 uppercase tracking-wide">Onboarding</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Renewal payment entries */}
+              {allPaymentLog.length === 0 && !onboardingPayment && (
+                <div className="px-4 py-6 text-center">
+                  <CreditCard className="w-6 h-6 text-slate-300 mx-auto mb-2" />
+                  <p className="text-xs text-slate-400">No payments recorded yet</p>
+                </div>
+              )}
+              {allPaymentLog.map((p: any, i: number) => (
+                <div key={p.id ?? i} className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-colors">
+                  <div className="w-1.5 h-8 rounded-full bg-accent flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-semibold text-slate-700">
+                      {getMonthShort(p.renewalMonth)} {p.renewalYear} · <span className="font-normal text-slate-500">{p.product}</span>
+                    </p>
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      {p.paidOn}
+                      {p.recordedBy && <span> · {p.recordedBy}</span>}
+                      {p.notes && <span className="italic"> · {p.notes}</span>}
+                    </p>
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    <p className="text-sm font-bold text-slate-700">{formatCurrency(p.amount)}</p>
+                    <p className="text-[10px] text-slate-400 uppercase tracking-wide">Renewal</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
 
         {/* Notes */}
         <div className="border border-slate-200 rounded-xl overflow-hidden">
