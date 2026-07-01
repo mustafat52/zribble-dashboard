@@ -86,7 +86,7 @@ function ContractEditForm({ contract, onSave, onCancel }: ContractEditFormProps)
           </select>
         </div>
         <div>
-          <label className={labelCls}>Contract Term (months)</label>
+          <label className={labelCls}>Renewal Term (months)</label>
           <input type="number" min={1} max={36} value={term} onChange={(e) => setTerm(e.target.value)} className={inputCls} />
         </div>
         <div>
@@ -569,7 +569,7 @@ export function ClientDetailModal({ open, onClose, contracts, onMarkPayment, isS
                       <div className="grid grid-cols-3 gap-2 text-xs">
                         {[
                           ["Contract ID", effective.contractId||"—"],
-                          ["Term",        `${effective.contractTermMonths} months`],
+                          ["Renews every",        `${effective.contractTermMonths} months`],
                           ["GST",         effective.gstStatus==="Y"?"Registered":"Not registered"],
                           ["Profiles",    String(effective.profiles)],
                           ["Account Mgr", effective.accountManager],

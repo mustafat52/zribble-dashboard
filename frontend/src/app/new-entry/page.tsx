@@ -63,7 +63,7 @@ const AM_OPTS = [
 const TERM_OPTS = [
   ...[1,2,3,4,5,6,7,8,9,10,11,12,14,15,18,24].map((n) => ({
     value: String(n),
-    label: `${n} month${n > 1 ? "s" : ""}`,
+    label: `Every ${n} month${n > 1 ? "s" : ""}`,
   })),
   { value: "custom", label: "Custom (enter below)..." },
 ];
@@ -127,7 +127,7 @@ function validate(form: NewContractForm, step: number): Record<string, string> {
   if (step >= 2) {
     if (!form.product)                                               errors.product = "Select a product";
     if (!form.profiles || form.profiles < 1)                         errors.profiles = "Minimum 1 profile";
-    if (!form.contractTermMonths || form.contractTermMonths < 1)     errors.contractTermMonths = "Select contract term";
+    if (!form.contractTermMonths || form.contractTermMonths < 1)     errors.contractTermMonths = "Select renewal term";
   }
   if (step >= 3) {
     if (!form.dealValue || form.dealValue <= 0) errors.dealValue = "Enter a valid deal value";
@@ -182,14 +182,12 @@ export default function NewEntryPage() {
   interface PromiseRow { date: string; amount: string; notes: string; }
   const [promiseRows, setPromiseRows] = useState<PromiseRow[]>([{ date: "", amount: "", notes: "" }]);
 
-function updatePromiseRow(idx: number, field: keyof PromiseRow, value: string) {
-  setPromiseRows((prev) => prev.map((row, i) => i === idx ? { ...row, [field]: value } : row));
-}
+  function updatePromiseRow(idx: number, field: keyof PromiseRow, value: string) {
+    setPromiseRows((prev) => prev.map((row, i) => i === idx ? { ...row, [field]: value } : row));
+  }
 
   const { addOnboardingPayment, addNote: addClientNote, addPromise } = useClient();
 
-  // Use mutateAsync directly so we can await the real server-assigned contract ID
-  // before creating the dependent onboarding/promise/note records.
   const createContractMutation = useCreateContract();
 
   const renewalPreview = useMemo(
@@ -222,10 +220,6 @@ function updatePromiseRow(idx: number, field: keyof PromiseRow, value: string) {
     setLoading(true);
 
     try {
-      // 1. Create the contract first and await the real server-assigned ID.
-      //    The backend enforces the employee's own salesperson name server-side,
-      //    so whatever is in form.salesperson is used for admins; employees are
-      //    overridden by the backend regardless.
       const created = await createContractMutation.mutateAsync({
         salesperson:        form.salesperson,
         clientName:         form.clientName,
@@ -242,7 +236,6 @@ function updatePromiseRow(idx: number, field: keyof PromiseRow, value: string) {
 
       const realContractId = created.id;
 
-      // 2. Save onboarding payment against the real contract ID.
       if (onboardingStatus !== "not_collected" && paidAmount > 0) {
         addOnboardingPayment({
           contractId:      realContractId,
@@ -255,8 +248,6 @@ function updatePromiseRow(idx: number, field: keyof PromiseRow, value: string) {
         });
       }
 
-      // 3. Save promise if partial payment and promise date given.
-      
       if (isPartial) {
         promiseRows
           .filter((r) => r.date)
@@ -277,7 +268,6 @@ function updatePromiseRow(idx: number, field: keyof PromiseRow, value: string) {
           });
       }
 
-      // 4. Save initial note.
       if (initialNote.trim()) {
         addClientNote({
           id:        `note-${Date.now()}`,
@@ -420,12 +410,12 @@ function updatePromiseRow(idx: number, field: keyof PromiseRow, value: string) {
                       disabled={!!prefilledClientName}
                     />
                     <Select
-                    label="Salesperson *"
-                    options={SALESPERSON_OPTS}
-                    value={form.salesperson}
-                    onChange={(e) => update("salesperson", e.target.value as NewContractForm["salesperson"])}
-                    error={errors.salesperson}
-                    disabled={user?.role === "employee"}
+                      label="Salesperson *"
+                      options={SALESPERSON_OPTS}
+                      value={form.salesperson}
+                      onChange={(e) => update("salesperson", e.target.value as NewContractForm["salesperson"])}
+                      error={errors.salesperson}
+                      disabled={user?.role === "employee"}
                     />
                     <Select
                       label="Account Manager *"
@@ -478,7 +468,7 @@ function updatePromiseRow(idx: number, field: keyof PromiseRow, value: string) {
                       />
                       <div className="flex flex-col gap-1.5">
                         <Select
-                          label="Contract Term *"
+                          label="Renewal Term *"
                           options={TERM_OPTS}
                           value={isCustomTerm ? "custom" : String(form.contractTermMonths)}
                           onChange={(e) => {
@@ -512,7 +502,7 @@ function updatePromiseRow(idx: number, field: keyof PromiseRow, value: string) {
                               <p className="text-xs text-accent-red">Must be between 1 and 36 months</p>
                             )}
                             {customTerm && parseInt(customTerm) >= 1 && parseInt(customTerm) <= 36 && (
-                              <p className="text-xs text-accent-green">✓ {customTerm}-month contract selected</p>
+                              <p className="text-xs text-accent-green">✓ Renews every {customTerm} months</p>
                             )}
                             <button
                               onClick={() => { setIsCustomTerm(false); update("contractTermMonths", 3); setCustomTerm(""); }}
@@ -626,7 +616,6 @@ function updatePromiseRow(idx: number, field: keyof PromiseRow, value: string) {
                         ))}
                       </div>
 
-                      {/* Amount + date fields — show for collected and partial */}
                       {onboardingStatus !== "not_collected" && (
                         <>
                           <Input
@@ -654,7 +643,6 @@ function updatePromiseRow(idx: number, field: keyof PromiseRow, value: string) {
                         </>
                       )}
 
-                      {/* Live status preview */}
                       {onboardingStatus !== "not_collected" && paidAmount > 0 && (
                         <div className={cn(
                           "flex items-center justify-between px-4 py-3 rounded-xl border",
@@ -670,7 +658,6 @@ function updatePromiseRow(idx: number, field: keyof PromiseRow, value: string) {
                         </div>
                       )}
 
-                      {/* ── PROMISE SECTION — shows when partial and remaining > 0 ── */}
                       {isPartial && (
                         <div className="border border-amber-200 bg-accent-amberLight rounded-xl p-4 space-y-4">
                           <div className="flex items-center gap-2">
@@ -773,7 +760,7 @@ function updatePromiseRow(idx: number, field: keyof PromiseRow, value: string) {
                         ["Product",        form.product],
                         ["Contract ID",    form.contractId || "—"],
                         ["Profiles",       String(form.profiles)],
-                        ["Term",           `${form.contractTermMonths} month${form.contractTermMonths > 1 ? "s" : ""}`],
+                        ["Renewal Term",   `Every ${form.contractTermMonths} month${form.contractTermMonths > 1 ? "s" : ""}`],
                         ["GST",            form.gstStatus === "Y" ? "Registered" : "Not registered"],
                         ["Deal Value",     formatCurrency(form.dealValue)],
                         ["First Renewal",  form.firstRenewalDate],
@@ -902,7 +889,7 @@ function updatePromiseRow(idx: number, field: keyof PromiseRow, value: string) {
                     </span>
                   </div>
                   <div className="flex justify-between text-xs">
-                    <span className="text-gray-600">Term</span>
+                    <span className="text-gray-600">Renews every</span>
                     <span className="text-gray-400">{form.contractTermMonths}m</span>
                   </div>
                   <div className="flex justify-between text-xs">

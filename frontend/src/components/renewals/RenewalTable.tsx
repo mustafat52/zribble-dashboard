@@ -179,7 +179,7 @@ export function RenewalTable({ year, month, onMarkPayment, salesperson }: Renewa
               <Th>Product</Th>
               <Th>Account Manager</Th>
               <Th>GST</Th>
-              <Th>Term</Th>
+              <Th>Renews</Th>
               <Th><button onClick={() => toggleSort("amount")} className="flex items-center gap-1 hover:text-slate-700">Amount <SortIcon k="amount" /></button></Th>
               <Th><button onClick={() => toggleSort("status")} className="flex items-center gap-1 hover:text-slate-700">Status <SortIcon k="status" /></button></Th>
               <Th>Action</Th>
