@@ -1,7 +1,7 @@
 "use client";
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
 
-export type UserRole = "super_admin" | "accounts_team" | "employee";
+export type UserRole = "super_admin" | "accounts_team" | "employee" | "account_manager";
 export type EmployeeMode = "view" | "view_edit";
 
 export interface AppUser {
@@ -11,12 +11,14 @@ export interface AppUser {
   role: UserRole;
   mode?: EmployeeMode;
   salesperson?: string;
+  accountManager?: string;
   createdAt: string;
   createdBy: string;
 }
 
 type Action =
   | "view_all"
+  | "view_insights"
   | "record_payment"
   | "add_client"
   | "edit_client"
@@ -80,11 +82,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const canPerform = useCallback((action: Action): boolean => {
     if (!user) return false;
     switch (action) {
+      // view_all means "see org-wide unrestricted data" and is used in 10+
+      // places across the frontend. Do NOT add employee or account_manager
+      // here — that would silently grant them access to everyone's contracts.
       case "view_all":       return user.role === "super_admin" || user.role === "accounts_team";
-      case "record_payment": return user.role === "super_admin" || (user.role === "employee" && user.mode === "view_edit");
+      // view_insights gates the Insights page only. All four roles get in —
+      // the Insights page itself locks filters based on the specific role.
+      case "view_insights":  return true;
+      case "record_payment": return user.role === "super_admin"
+                                || (user.role === "employee" && user.mode === "view_edit")
+                                || (user.role === "account_manager" && user.mode === "view_edit");
       case "add_client":     return user.role === "super_admin" || (user.role === "employee" && user.mode === "view_edit");
-      case "edit_client":    return user.role === "super_admin" || (user.role === "employee" && user.mode === "view_edit");
-      case "stop_client":    return user.role === "super_admin" || (user.role === "employee" && user.mode === "view_edit");
+      // account_manager intentionally excluded from add_client — creating a
+      // new client is an executive action; AMs are assigned to existing clients.
+      case "edit_client":    return user.role === "super_admin"
+                                || (user.role === "employee" && user.mode === "view_edit")
+                                || (user.role === "account_manager" && user.mode === "view_edit");
+      case "stop_client":    return user.role === "super_admin"
+                                || (user.role === "employee" && user.mode === "view_edit")
+                                || (user.role === "account_manager" && user.mode === "view_edit");
       case "export_excel":   return user.role === "super_admin";
       case "view_settings":  return user.role === "super_admin";
       case "manage_users":   return user.role === "super_admin";

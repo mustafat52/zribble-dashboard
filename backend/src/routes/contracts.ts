@@ -31,6 +31,31 @@ router.get("/salespersons", async (req: Request, res: Response) => {
   }
 });
 
+// ── GET /contracts/account-managers ───────────────────────────────────────────
+// Must come BEFORE /:id so "account-managers" is not treated as a contract id.
+// Returns the unique account manager names that exist in the DB.
+// Account managers always get only their own name.
+router.get("/account-managers", async (req: Request, res: Response) => {
+  try {
+    const user = req.user!;
+
+    if (user.role === "account_manager" && user.accountManager) {
+      res.json([user.accountManager]);
+      return;
+    }
+
+    const groups = await prisma.contract.groupBy({
+      by: ["accountManager"],
+      orderBy: { accountManager: "asc" },
+    });
+
+    res.json(groups.map((g) => g.accountManager));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch account managers" });
+  }
+});
+
 // ── GET /contracts ────────────────────────────────────────────────────────────
 // super_admin / accounts_team → all contracts
 // employee → own salesperson only
@@ -40,6 +65,8 @@ router.get("/", async (req: Request, res: Response) => {
     const where =
       user.role === "employee" && user.salesperson
         ? { salesperson: user.salesperson }
+        : user.role === "account_manager" && user.accountManager
+        ? { accountManager: user.accountManager }
         : {};
 
     const contracts = await prisma.contract.findMany({
@@ -85,6 +112,10 @@ router.get("/:id", async (req: Request, res: Response) => {
       res.status(403).json({ error: "Forbidden" });
       return;
     }
+    if (user.role === "account_manager" && contract.accountManager !== user.accountManager) {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
 
     res.json(contract);
   } catch (err) {
@@ -106,13 +137,16 @@ router.post("/", canWrite, async (req: Request, res: Response) => {
     // Employees can only create under their own salesperson name
     const effectiveSalesperson =
       user.role === "employee" ? user.salesperson! : salesperson;
+    // Account managers can only create under their own AM name
+    const effectiveAccountManager =
+      user.role === "account_manager" ? user.accountManager! : accountManager;
 
     const contract = await prisma.contract.create({
       data: {
         salesperson: effectiveSalesperson,
         clientName,
         product,
-        accountManager,
+        accountManager: effectiveAccountManager,
         contractId: contractId ?? null,
         profiles: Number(profiles),
         gstStatus,
@@ -155,6 +189,10 @@ router.patch("/:id", canWrite, async (req: Request, res: Response) => {
     }
 
     if (user.role === "employee" && existing.salesperson !== user.salesperson) {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
+    if (user.role === "account_manager" && existing.accountManager !== user.accountManager) {
       res.status(403).json({ error: "Forbidden" });
       return;
     }
@@ -241,6 +279,10 @@ router.patch("/:id/status", canWrite, async (req: Request, res: Response) => {
     }
 
     if (user.role === "employee" && existing.salesperson !== user.salesperson) {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
+    if (user.role === "account_manager" && existing.accountManager !== user.accountManager) {
       res.status(403).json({ error: "Forbidden" });
       return;
     }

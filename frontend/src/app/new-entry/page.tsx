@@ -10,7 +10,7 @@ import { formatCurrency, getMonthShort, SALESPERSON_COLORS } from "@/lib/utils";
 import { NewContractForm, GSTStatus } from "@/types";
 import { useClient } from "@/lib/client-context";
 import { useAuth } from "@/lib/auth-context";
-import { useCreateContract } from "@/lib/api";
+import { useCreateContract, useAccountManagers, useSalespersons } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { useSearchParams } from "next/navigation";
 import {
@@ -20,14 +20,10 @@ import {
 } from "lucide-react";
 
 // ─── Options ─────────────────────────────────────────────────────────────────
-const SALESPERSON_OPTS = [
-  { value: "Aftab",   label: "Aftab"   },
-  { value: "Sarvesh", label: "Sarvesh" },
-  { value: "Firoz",   label: "Firoz"   },
-  { value: "Idris",   label: "Idris"   },
-  { value: "Prajay",  label: "Prajay"  },
-  { value: "Vinay",   label: "Vinay"   },
-];
+// SALESPERSON_OPTS and AM_OPTS used to be hardcoded here. Both are now sourced
+// dynamically from real User records via useSalespersons()/useAccountManagers()
+// (same treatment already applied in settings/page.tsx) — a new hire is
+// available immediately, with no code change needed.
 
 const PRODUCT_OPTS = [
   { value: "DM Single",            label: "DM Single"            },
@@ -40,24 +36,6 @@ const PRODUCT_OPTS = [
   { value: "DM + GMB + SMM",       label: "DM + GMB + SMM"       },
   { value: "GMB + SMM + SEO",      label: "GMB + SMM + SEO"      },
   { value: "DM + GMB + SMM + SEO", label: "DM + GMB + SMM + SEO" },
-];
-
-const AM_OPTS = [
-  { value: "Gaurav",   label: "Gaurav"   },
-  { value: "Gunjan",   label: "Gunjan"   },
-  { value: "Hitesh",   label: "Hitesh"   },
-  { value: "Jenil",    label: "Jenil"    },
-  { value: "Kshitiz",  label: "Kshitiz"  },
-  { value: "Khushi",   label: "Khushi"   },
-  { value: "Kritika",  label: "Kritika"  },
-  { value: "Hamza",    label: "Hamza"    },
-  { value: "Rayyan",   label: "Rayyan"   },
-  { value: "Khasim",   label: "Khasim"   },
-  { value: "Danish",   label: "Danish"   },
-  { value: "Danish S", label: "Danish S" },
-  { value: "Saanya",   label: "Saanya"   },
-  { value: "Latika",   label: "Latika"   },
-  { value: "Chetan",   label: "Chetan"   },
 ];
 
 const TERM_OPTS = [
@@ -189,6 +167,8 @@ export default function NewEntryPage() {
   const { addOnboardingPayment, addNote: addClientNote, addPromise } = useClient();
 
   const createContractMutation = useCreateContract();
+  const { data: amUsers = [] }          = useAccountManagers();
+  const { data: salespersonUsers = [] } = useSalespersons();
 
   const renewalPreview = useMemo(
     () => calcRenewalSchedule(form.firstRenewalDate, form.dealValue, form.contractTermMonths),
@@ -411,19 +391,30 @@ export default function NewEntryPage() {
                     />
                     <Select
                       label="Salesperson *"
-                      options={SALESPERSON_OPTS}
+                      options={salespersonUsers.map((s) => ({ value: s, label: s }))}
                       value={form.salesperson}
                       onChange={(e) => update("salesperson", e.target.value as NewContractForm["salesperson"])}
                       error={errors.salesperson}
                       disabled={user?.role === "employee"}
                     />
-                    <Select
-                      label="Account Manager *"
-                      options={AM_OPTS}
-                      value={form.accountManager}
-                      onChange={(e) => update("accountManager", e.target.value)}
-                      error={errors.accountManager}
-                    />
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-xs font-medium text-slate-600 uppercase tracking-wide">
+                        Account Manager *
+                      </label>
+                      <input
+                        list="am-new-entry-suggestions"
+                        value={form.accountManager}
+                        onChange={(e) => update("accountManager", e.target.value)}
+                        placeholder="Type or select an account manager"
+                        className="w-full px-3 py-2 h-9 text-sm bg-white border border-slate-200 rounded-lg focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/10 text-slate-700 placeholder:text-slate-400"
+                      />
+                      <datalist id="am-new-entry-suggestions">
+                        {amUsers.map((am) => <option key={am} value={am} />)}
+                      </datalist>
+                      {errors.accountManager && (
+                        <p className="text-xs text-accent-red">{errors.accountManager}</p>
+                      )}
+                    </div>
                     <Input
                       label="Contract ID (optional)"
                       placeholder="e.g. 14700"

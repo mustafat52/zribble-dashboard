@@ -3,9 +3,10 @@ import jwt from "jsonwebtoken";
 
 export interface AuthUser {
   userId: string;
-  role: "super_admin" | "accounts_team" | "employee";
+  role: "super_admin" | "accounts_team" | "employee" | "account_manager";
   mode?: "view" | "view_edit";
   salesperson?: string;
+  accountManager?: string;
 }
 
 // Extend Express Request to carry the verified user

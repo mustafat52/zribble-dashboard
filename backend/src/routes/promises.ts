@@ -16,6 +16,8 @@ router.get("/", async (req: Request, res: Response) => {
     const where =
       user.role === "employee" && user.salesperson
         ? { salesperson: user.salesperson }
+        : user.role === "account_manager" && user.accountManager
+        ? { contract: { accountManager: user.accountManager } }
         : {};
 
     const promises = await prisma.promise.findMany({
@@ -55,6 +57,10 @@ router.post("/", canWrite, async (req: Request, res: Response) => {
       res.status(403).json({ error: "Forbidden" });
       return;
     }
+    if (user.role === "account_manager" && contract.accountManager !== user.accountManager) {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
 
     const promise = await prisma.promise.create({
       data: {
@@ -91,6 +97,15 @@ router.delete("/:id", canWrite, async (req: Request, res: Response) => {
     if (user.role === "employee" && promise.salesperson !== user.salesperson) {
       res.status(403).json({ error: "Forbidden" });
       return;
+    }
+    if (user.role === "account_manager") {
+      // Promise has no accountManager field of its own — join through
+      // the parent contract to check AM ownership.
+      const contract = await prisma.contract.findUnique({ where: { id: promise.contractId } });
+      if (!contract || contract.accountManager !== user.accountManager) {
+        res.status(403).json({ error: "Forbidden" });
+        return;
+      }
     }
 
     await prisma.promise.delete({ where: { id: req.params.id } });

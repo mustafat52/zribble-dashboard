@@ -39,6 +39,7 @@ router.post("/login", async (req: Request, res: Response) => {
       role: user.role,
       mode: user.mode ?? undefined,
       salesperson: user.salesperson ?? undefined,
+      accountManager: user.accountManager ?? undefined,
     };
 
     const token = jwt.sign(payload, secret, { expiresIn: "7d" });
@@ -63,6 +64,7 @@ router.post("/login", async (req: Request, res: Response) => {
         role: user.role,
         mode: user.mode,
         salesperson: user.salesperson,
+        accountManager: user.accountManager,
       },
     });
   } catch (err) {
@@ -96,6 +98,7 @@ router.get("/me", authenticate, async (req: Request, res: Response) => {
         role: true,
         mode: true,
         salesperson: true,
+        accountManager: true,
         createdAt: true,
       },
     });

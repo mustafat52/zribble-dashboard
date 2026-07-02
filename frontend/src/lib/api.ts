@@ -183,6 +183,11 @@ export interface DashboardStats {
     activeContracts: number;
     totalDealValue: number;
   }> | null;
+  execBreakdown: Array<{
+    salesperson: string;
+    activeContracts: number;
+    totalDealValue: number;
+  }> | null;
 }
 
 export function useDashboardStats() {
@@ -197,6 +202,15 @@ export function useSalespersons() {
   return useQuery<string[]>({
     queryKey: ["salespersons"],
     queryFn:  () => apiFetch<string[]>("/contracts/salespersons"),
+    staleTime: 5 * 60_000,
+  });
+}
+
+// ─── Account managers list ────────────────────────────────────────────────────
+export function useAccountManagers() {
+  return useQuery<string[]>({
+    queryKey: ["accountManagers"],
+    queryFn:  () => apiFetch<string[]>("/contracts/account-managers"),
     staleTime: 5 * 60_000,
   });
 }

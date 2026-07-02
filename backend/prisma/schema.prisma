@@ -11,6 +11,7 @@ enum UserRole {
   super_admin
   accounts_team
   employee
+  account_manager
 }
 
 enum EmployeeMode {
@@ -42,15 +43,16 @@ enum PaymentType {
 }
 
 model User {
-  id           String        @id @default(cuid())
-  name         String
-  email        String        @unique
-  passwordHash String
-  role         UserRole
-  mode         EmployeeMode?
-  salesperson  String?
-  createdAt    DateTime      @default(now())
-  createdBy    String
+  id             String        @id @default(cuid())
+  name           String
+  email          String        @unique
+  passwordHash   String
+  role           UserRole
+  mode           EmployeeMode?
+  salesperson    String?
+  accountManager String?
+  createdAt      DateTime      @default(now())
+  createdBy      String
 }
 
 model Contract {

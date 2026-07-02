@@ -48,6 +48,22 @@ export function Sidebar() {
     ).size;
   }
 
+  // Account Managers quick-links: unlike SALESPEOPLE_ORDER above (a fixed,
+  // hardcoded team of 6 kept stable so the nav doesn't reshuffle), the AM
+  // team is larger (15+ names) and changes more frequently, so names are
+  // derived live from contracts rather than hardcoded — a static order list
+  // would drift from reality more easily here.
+  const accountManagerNames = Array.from(
+    new Set(contracts.map((c) => c.accountManager).filter(Boolean))
+  ).sort() as string[];
+
+  const amAccountCounts: Record<string, number> = {};
+  for (const name of accountManagerNames) {
+    amAccountCounts[name] = new Set(
+      contracts.filter((c) => c.accountManager === name).map((c) => c.clientName)
+    ).size;
+  }
+
   function handleLogout() {
     logout();
     router.replace("/login");
@@ -108,8 +124,8 @@ export function Sidebar() {
           </div>
         )}
 
-        {/* Insights — super_admin and accounts_team only */}
-        {canPerform("view_all") && (
+        {/* Insights — all roles get access; the Insights page itself locks filters per role */}
+        {canPerform("view_insights") && (
           <div>
             <ul className="space-y-0.5">
               {navLink("/insights", BarChart2, "Insights")}
@@ -144,6 +160,28 @@ export function Sidebar() {
               ))}
           </ul>
         </div>
+
+        {/* Account Managers quick-links — only show for super_admin / accounts_team; account managers see only their own */}
+        {(canPerform("view_all") || user?.role === "account_manager") && (
+          <div>
+            <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest px-2 mb-1.5">
+              Account Managers
+            </p>
+            <ul className="space-y-0.5">
+              {accountManagerNames
+                .filter((name) => canPerform("view_all") || user?.accountManager === name)
+                .map((name) => (
+                  <li key={name}>
+                    <Link href={`/salesperson?exec=${encodeURIComponent(name)}&dimension=am`} className="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm transition-all duration-150 text-slate-500 hover:text-slate-700 hover:bg-slate-50 group">
+                      <span className="w-2 h-2 rounded-full flex-shrink-0 bg-accent-purple" />
+                      <span className="flex-1 text-xs">{name}</span>
+                      {canPerform("view_all") && <span className="text-[10px] text-slate-400">{amAccountCounts[name]}</span>}
+                    </Link>
+                  </li>
+                ))}
+            </ul>
+          </div>
+        )}
       </nav>
 
       {/* Footer — user info + logout */}
@@ -155,7 +193,10 @@ export function Sidebar() {
           <div className="flex-1 min-w-0">
             <p className="text-xs font-medium text-slate-700 truncate">{user?.name ?? "—"}</p>
             <p className="text-[10px] text-slate-400 truncate">
-              {user?.role === "super_admin" ? "Super Admin" : user?.role === "accounts_team" ? "Accounts" : `Executive · ${user?.mode === "view_edit" ? "Edit" : "View"}`}
+              {user?.role === "super_admin" ? "Super Admin"
+                : user?.role === "accounts_team" ? "Accounts"
+                : user?.role === "account_manager" ? `Acct Manager · ${user?.mode === "view_edit" ? "Edit" : "View"}`
+                : `Executive · ${user?.mode === "view_edit" ? "Edit" : "View"}`}
             </p>
           </div>
           <button onClick={handleLogout} title="Sign out"

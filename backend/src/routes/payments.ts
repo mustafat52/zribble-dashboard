@@ -39,6 +39,10 @@ router.post("/", canWrite, async (req: Request, res: Response) => {
       res.status(403).json({ error: "Forbidden" });
       return;
     }
+    if (user.role === "account_manager" && contract.accountManager !== user.accountManager) {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
 
     
     const dbUser = await prisma.user.findUnique({ where: { id: user.userId } });
@@ -87,6 +91,10 @@ router.delete("/:id", canWrite, async (req: Request, res: Response) => {
       return;
     }
     if (user.role === "employee" && contract.salesperson !== user.salesperson) {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
+    if (user.role === "account_manager" && contract.accountManager !== user.accountManager) {
       res.status(403).json({ error: "Forbidden" });
       return;
     }

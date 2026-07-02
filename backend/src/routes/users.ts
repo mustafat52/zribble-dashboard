@@ -12,20 +12,23 @@ router.use(requireRole("super_admin"));
 
 const SALT_ROUNDS = 10;
 
+const USER_SELECT = {
+  id: true,
+  name: true,
+  email: true,
+  role: true,
+  mode: true,
+  salesperson: true,
+  accountManager: true,
+  createdAt: true,
+  createdBy: true,
+} as const;
+
 // ── GET /users ────────────────────────────────────────────────────────────────
 router.get("/", async (_req: Request, res: Response) => {
   try {
     const users = await prisma.user.findMany({
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        role: true,
-        mode: true,
-        salesperson: true,
-        createdAt: true,
-        createdBy: true,
-      },
+      select: USER_SELECT,
       orderBy: { createdAt: "asc" },
     });
     res.json(users);
@@ -39,13 +42,14 @@ router.get("/", async (_req: Request, res: Response) => {
 router.post("/", async (req: Request, res: Response) => {
   try {
     const adminUser = req.user!;
-    const { name, email, password, role, mode, salesperson } = req.body as {
+    const { name, email, password, role, mode, salesperson, accountManager } = req.body as {
       name: string;
       email: string;
       password: string;
-      role: "super_admin" | "accounts_team" | "employee";
+      role: "super_admin" | "accounts_team" | "employee" | "account_manager";
       mode?: "view" | "view_edit";
       salesperson?: string;
+      accountManager?: string;
     };
 
     if (!name || !email || !password || !role) {
@@ -69,18 +73,10 @@ router.post("/", async (req: Request, res: Response) => {
         role,
         mode: mode ?? null,
         salesperson: salesperson ?? null,
+        accountManager: accountManager ?? null,
         createdBy: adminUser.userId,
       },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        role: true,
-        mode: true,
-        salesperson: true,
-        createdAt: true,
-        createdBy: true,
-      },
+      select: USER_SELECT,
     });
 
     res.status(201).json(user);
@@ -93,13 +89,14 @@ router.post("/", async (req: Request, res: Response) => {
 // ── PATCH /users/:id ──────────────────────────────────────────────────────────
 router.patch("/:id", async (req: Request, res: Response) => {
   try {
-    const { name, email, password, role, mode, salesperson } = req.body as {
+    const { name, email, password, role, mode, salesperson, accountManager } = req.body as {
       name?: string;
       email?: string;
       password?: string;
-      role?: "super_admin" | "accounts_team" | "employee";
+      role?: "super_admin" | "accounts_team" | "employee" | "account_manager";
       mode?: "view" | "view_edit" | null;
       salesperson?: string | null;
+      accountManager?: string | null;
     };
 
     const existing = await prisma.user.findUnique({ where: { id: req.params.id } });
@@ -123,21 +120,13 @@ router.patch("/:id", async (req: Request, res: Response) => {
     if (role !== undefined) updateData.role = role;
     if (mode !== undefined) updateData.mode = mode;
     if (salesperson !== undefined) updateData.salesperson = salesperson;
+    if (accountManager !== undefined) updateData.accountManager = accountManager;
     if (password) updateData.passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
 
     const updated = await prisma.user.update({
       where: { id: req.params.id },
       data: updateData as Parameters<typeof prisma.user.update>[0]["data"],
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        role: true,
-        mode: true,
-        salesperson: true,
-        createdAt: true,
-        createdBy: true,
-      },
+      select: USER_SELECT,
     });
 
     res.json(updated);

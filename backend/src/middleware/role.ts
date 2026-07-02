@@ -25,7 +25,7 @@ export function requireRole(...roles: Role[]) {
 
 /**
  * requireMode(...modes)
- * For employees: rejects unless their mode matches.
+ * For employees and account_managers: rejects unless their mode matches.
  * super_admin and accounts_team always pass through (they have no mode restriction).
  */
 export function requireMode(...modes: Mode[]) {
@@ -35,8 +35,8 @@ export function requireMode(...modes: Mode[]) {
       res.status(401).json({ error: "Not authenticated" });
       return;
     }
-    // Non-employees are not subject to mode checks
-    if (user.role !== "employee") {
+    // Non-employees and non-account-managers are not subject to mode checks
+    if (user.role !== "employee" && user.role !== "account_manager") {
       next();
       return;
     }
@@ -50,7 +50,7 @@ export function requireMode(...modes: Mode[]) {
 
 /**
  * canWrite
- * Shorthand: super_admin OR (employee with view_edit mode).
+ * Shorthand: super_admin OR (employee with view_edit mode) OR (account_manager with view_edit mode).
  * accounts_team cannot write.
  */
 export function canWrite(req: Request, res: Response, next: NextFunction) {
@@ -61,7 +61,8 @@ export function canWrite(req: Request, res: Response, next: NextFunction) {
   }
   const allowed =
     user.role === "super_admin" ||
-    (user.role === "employee" && user.mode === "view_edit");
+    (user.role === "employee" && user.mode === "view_edit") ||
+    (user.role === "account_manager" && user.mode === "view_edit");
 
   if (!allowed) {
     res.status(403).json({ error: "Forbidden: write access required" });

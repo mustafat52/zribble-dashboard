@@ -34,6 +34,10 @@ router.post("/", canWrite, async (req: Request, res: Response) => {
       res.status(403).json({ error: "Forbidden" });
       return;
     }
+    if (user.role === "account_manager" && contract.accountManager !== user.accountManager) {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
 
     // Find all RenewalMonth rows >= fromYear/fromMonth for this contract
     const renewalMonthsToUpdate = await prisma.renewalMonth.findMany({

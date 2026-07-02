@@ -835,7 +835,7 @@ export function ClientDetailModal({ open, onClose, contracts, onMarkPayment, isS
                     </p>
                     <p className="text-[11px] text-slate-400 mt-0.5">
                       {p.paidOn}
-                      {p.recordedBy && <span> · {p.recordedBy}</span>}
+                      {p.recordedBy && <span> · Recorded by: {p.recordedBy}</span>}
                       {p.notes && <span className="italic"> · {p.notes}</span>}
                     </p>
                   </div>

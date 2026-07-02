@@ -19,15 +19,14 @@ import {
 } from "recharts";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const ALL_SALESPERSONS = ["Aftab","Sarvesh","Firoz","Idris","Prajay","Vinay"];
+// ALL_SALESPERSONS and ALL_AMS used to be hardcoded lists here. Both are now
+// derived live from loaded contract data inside the component (see useMemo
+// below) — this way a new exec or AM hire automatically appears in these
+// filters as soon as they have contracts assigned, with no code change needed.
 const ALL_PRODUCTS = [
   "DM Single","GMB Single","SMM Single",
   "DM + GMB","DM + SMM","GMB + SMM","GMB + SEO",
   "DM + GMB + SMM","GMB + SMM + SEO","DM + GMB + SMM + SEO",
-];
-const ALL_AMS = [
-  "Khushi","Gunjan","Kshitiz","Gaurav","Hitesh","Jenil",
-  "Hamza","Kritika","Rayyan","Danish","Danish S","Saanya","Latika","Chetan","Khasim",
 ];
 const PRODUCT_COLORS = [
   "#4F46E5","#0891B2","#7C3AED","#059669","#D97706","#DC2626",
@@ -67,12 +66,34 @@ function AccentToggle({ label, active, onClick }: { label: string; active: boole
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function InsightsPage() {
-  const { canPerform } = useAuth();
+  const { user, canPerform } = useAuth();
   const { data: allContracts = [], isLoading } = useContracts();
 
-  const [selExecs,    setSelExecs]    = useState<string[]>([]);
+  // ── Role-awareness ────────────────────────────────────────────────────────
+  // For employees: pre-lock the salesperson filter to their own name.
+  // For account managers: pre-lock the AM filter to their own name.
+  // These are derived once on mount and cannot be changed by the user.
+  const isEmployee = user?.role === "employee";
+  const isAM       = user?.role === "account_manager";
+  const isRestricted = isEmployee || isAM;
+
+  const lockedSalesperson = isEmployee ? (user?.salesperson ?? null) : null;
+  const lockedAM          = isAM ? (user?.accountManager ?? null) : null;
+
+  // Derived live from actual contract data — stays accurate as the team
+  // changes; a new exec or AM hire appears automatically, no code change.
+  const ALL_SALESPERSONS = useMemo(
+    () => Array.from(new Set(allContracts.map((c) => c.salesperson).filter(Boolean))).sort() as string[],
+    [allContracts]
+  );
+  const ALL_AMS = useMemo(
+    () => Array.from(new Set(allContracts.map((c) => c.accountManager).filter(Boolean))).sort() as string[],
+    [allContracts]
+  );
+
+  const [selExecs,    setSelExecs]    = useState<string[]>(lockedSalesperson ? [lockedSalesperson] : []);
   const [selProducts, setSelProducts] = useState<string[]>([]);
-  const [selAMs,      setSelAMs]      = useState<string[]>([]);
+  const [selAMs,      setSelAMs]      = useState<string[]>(lockedAM ? [lockedAM] : []);
   const [selGST,      setSelGST]      = useState<"all"|"Y"|"N">("all");
   const [multiOnly,   setMultiOnly]   = useState(false);
   const [showFilters, setShowFilters] = useState(true);
@@ -164,13 +185,15 @@ export default function InsightsPage() {
   const totalClients   = Object.keys(clientMap).length;
   const multiCount     = multiServiceClients.length;
 
-  const activeFilterCount = selExecs.length + selProducts.length + selAMs.length
+  const activeFilterCount = (isEmployee ? 0 : selExecs.length) + selProducts.length + (isAM ? 0 : selAMs.length)
     + (selGST !== "all" ? 1 : 0)
     + (multiOnly ? 1 : 0)
     + (fromCol !== MONTH_COLS[0] || toCol !== MONTH_COLS[MONTH_COLS.length-1] ? 1 : 0);
 
   function clearAll() {
-    setSelExecs([]); setSelProducts([]); setSelAMs([]);
+    setSelExecs(lockedSalesperson ? [lockedSalesperson] : []);
+    setSelAMs(lockedAM ? [lockedAM] : []);
+    setSelProducts([]);
     setSelGST("all"); setMultiOnly(false);
     setFromCol(MONTH_COLS[0]); setToCol(MONTH_COLS[MONTH_COLS.length-1]);
   }
@@ -223,13 +246,13 @@ export default function InsightsPage() {
     }
   }
 
-  if (!canPerform("view_all")) {
+  if (!canPerform("view_insights")) {
     return (
       <PageWrapper>
         <div className="flex flex-col items-center justify-center h-64 gap-3">
           <BarChart2 className="w-10 h-10 text-slate-300" />
           <p className="text-slate-500 font-medium">Access restricted</p>
-          <p className="text-sm text-slate-400">Insights are only available to Super Admins and Accounts Team.</p>
+          <p className="text-sm text-slate-400">Insights are not available for your role.</p>
         </div>
       </PageWrapper>
     );
@@ -242,7 +265,11 @@ export default function InsightsPage() {
           <h2 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
             <BarChart2 className="w-5 h-5 text-accent" /> Insights & Filters
           </h2>
-          <p className="text-xs text-slate-400 mt-0.5">Slice the portfolio any way you need — by exec, service, AM, month range, or overlap.</p>
+          <p className="text-xs text-slate-400 mt-0.5">
+            {isRestricted
+              ? "Slice your own portfolio any way you need — by service, month range, or overlap."
+              : "Slice the portfolio any way you need — by exec, service, AM, month range, or overlap."}
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={handleExport} disabled={exporting || isLoading}
@@ -315,11 +342,22 @@ export default function InsightsPage() {
           <div className="border-t border-slate-100" />
           <div>
             <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-2">Salesperson</p>
-            <div className="flex flex-wrap gap-1.5">
-              {ALL_SALESPERSONS.map((sp) => (
-                <Toggle key={sp} label={sp} active={selExecs.includes(sp)} color={SALESPERSON_COLORS[sp]} onClick={() => setSelExecs((v) => toggle(v, sp))} />
-              ))}
-            </div>
+            {isEmployee ? (
+              <div className="flex items-center gap-2">
+                <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border text-white border-transparent"
+                  style={{ backgroundColor: SALESPERSON_COLORS[lockedSalesperson!] }}>
+                  <span className="w-1.5 h-1.5 rounded-full bg-white/70" />
+                  {lockedSalesperson}
+                </span>
+                <span className="text-[10px] text-slate-400 italic">locked to your account</span>
+              </div>
+            ) : (
+              <div className="flex flex-wrap gap-1.5">
+                {ALL_SALESPERSONS.map((sp) => (
+                  <Toggle key={sp} label={sp} active={selExecs.includes(sp)} color={SALESPERSON_COLORS[sp]} onClick={() => setSelExecs((v) => toggle(v, sp))} />
+                ))}
+              </div>
+            )}
           </div>
           <div>
             <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-2">Service / Product</p>
@@ -331,11 +369,20 @@ export default function InsightsPage() {
           </div>
           <div>
             <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-2">Account Manager</p>
-            <div className="flex flex-wrap gap-1.5">
-              {ALL_AMS.map((am) => (
-                <AccentToggle key={am} label={am} active={selAMs.includes(am)} onClick={() => setSelAMs((v) => toggle(v, am))} />
-              ))}
-            </div>
+            {isAM ? (
+              <div className="flex items-center gap-2">
+                <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border bg-accent text-white border-accent">
+                  {lockedAM}
+                </span>
+                <span className="text-[10px] text-slate-400 italic">locked to your account</span>
+              </div>
+            ) : (
+              <div className="flex flex-wrap gap-1.5">
+                {ALL_AMS.map((am) => (
+                  <AccentToggle key={am} label={am} active={selAMs.includes(am)} onClick={() => setSelAMs((v) => toggle(v, am))} />
+                ))}
+              </div>
+            )}
           </div>
           <div className="flex flex-wrap items-center gap-6 pt-1 border-t border-slate-100">
             <div>

@@ -21,6 +21,7 @@ interface UserFormData {
   role: UserRole;
   mode: EmployeeMode | "";
   salesperson: string;
+  accountManager: string;
 }
 
 // ─── Local API helpers (same pattern as lib/api.ts) ──────────────────────────
@@ -74,15 +75,17 @@ function useDeleteUser() {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const ROLE_LABELS: Record<UserRole, string> = {
-  super_admin:   "Super Admin",
-  accounts_team: "Accounts Team",
-  employee:      "Executive",
+  super_admin:     "Super Admin",
+  accounts_team:   "Accounts Team",
+  employee:        "Executive",
+  account_manager: "Account Manager",
 };
 
 const ROLE_COLORS: Record<UserRole, string> = {
-  super_admin:   "bg-accent-light text-accent border-accent-border",
-  accounts_team: "bg-cyan-50 text-accent-cyan border-cyan-200",
-  employee:      "bg-slate-100 text-slate-600 border-slate-200",
+  super_admin:     "bg-accent-light text-accent border-accent-border",
+  accounts_team:   "bg-cyan-50 text-accent-cyan border-cyan-200",
+  employee:        "bg-slate-100 text-slate-600 border-slate-200",
+  account_manager: "bg-purple-50 text-accent-purple border-purple-200",
 };
 
 // NOTE: previously a hardcoded SALESPERSON_OPTS = ["Aftab","Sarvesh",...] array
@@ -94,7 +97,7 @@ const ROLE_COLORS: Record<UserRole, string> = {
 // actually in the system right now. See UserForm's `existingSalespeople` prop.
 
 const EMPTY_FORM: UserFormData = {
-  name: "", email: "", password: "", role: "employee", mode: "view", salesperson: "",
+  name: "", email: "", password: "", role: "employee", mode: "view", salesperson: "", accountManager: "",
 };
 
 // ─── User Form (shared for Add + Edit) ───────────────────────────────────────
@@ -106,9 +109,10 @@ interface UserFormProps {
   error?: string;
   loading?: boolean;
   existingSalespeople: string[];
+  existingAccountManagers: string[];
 }
 
-function UserForm({ initial = {}, isEdit, onSave, onCancel, error, loading, existingSalespeople }: UserFormProps) {
+function UserForm({ initial = {}, isEdit, onSave, onCancel, error, loading, existingSalespeople, existingAccountManagers }: UserFormProps) {
   const [form, setForm] = useState<UserFormData>({ ...EMPTY_FORM, ...initial });
   const [showPw, setShowPw] = useState(false);
 
@@ -119,8 +123,9 @@ function UserForm({ initial = {}, isEdit, onSave, onCancel, error, loading, exis
   function handleSubmit() {
     if (!form.name.trim() || !form.email.trim()) return;
     if (!isEdit && !form.password.trim()) return;
-    if (form.role === "employee" && !form.mode) return;
+    if ((form.role === "employee" || form.role === "account_manager") && !form.mode) return;
     if (form.role === "employee" && !form.salesperson.trim()) return;
+    if (form.role === "account_manager" && !form.accountManager.trim()) return;
     onSave(form);
   }
 
@@ -171,13 +176,14 @@ function UserForm({ initial = {}, isEdit, onSave, onCancel, error, loading, exis
           <label className={labelCls}>Role *</label>
           <select value={form.role} onChange={(e) => update("role", e.target.value as UserRole)} className={inputCls}>
             <option value="employee">Executive</option>
+            <option value="account_manager">Account Manager</option>
             <option value="accounts_team">Accounts Team</option>
             <option value="super_admin">Super Admin</option>
           </select>
         </div>
 
-        {/* Mode — only for employees */}
-        {form.role === "employee" && (
+        {/* Mode — for employees and account managers */}
+        {(form.role === "employee" || form.role === "account_manager") && (
           <div>
             <label className={labelCls}>Permission Mode *</label>
             <select value={form.mode} onChange={(e) => update("mode", e.target.value as EmployeeMode)} className={inputCls}>
@@ -210,6 +216,29 @@ function UserForm({ initial = {}, isEdit, onSave, onCancel, error, loading, exis
             )}
           </div>
         )}
+
+        {/* Account Manager — only for account managers. Free-text + datalist
+            suggestions, same treatment as the salesperson field above. */}
+        {form.role === "account_manager" && (
+          <div className="col-span-2">
+            <label className={labelCls}>Account Manager Name *</label>
+            <input
+              list="am-suggestions"
+              value={form.accountManager}
+              onChange={(e) => update("accountManager", e.target.value)}
+              placeholder="Type a name — existing names are suggested, or type a new one"
+              className={inputCls}
+            />
+            <datalist id="am-suggestions">
+              {existingAccountManagers.map((am) => <option key={am} value={am} />)}
+            </datalist>
+            {form.accountManager.trim() && !existingAccountManagers.includes(form.accountManager.trim()) && (
+              <p className="text-[10px] text-accent-amber mt-1">
+                "{form.accountManager.trim()}" is a new name — double-check spelling.
+              </p>
+            )}
+          </div>
+        )}
       </div>
 
       {error && (
@@ -222,7 +251,7 @@ function UserForm({ initial = {}, isEdit, onSave, onCancel, error, loading, exis
         </button>
         <button
           onClick={handleSubmit}
-          disabled={loading || !form.name.trim() || !form.email.trim() || (!isEdit && !form.password.trim()) || (form.role === "employee" && !form.mode) || (form.role === "employee" && !form.salesperson.trim())}
+          disabled={loading || !form.name.trim() || !form.email.trim() || (!isEdit && !form.password.trim()) || ((form.role === "employee" || form.role === "account_manager") && !form.mode) || (form.role === "employee" && !form.salesperson.trim()) || (form.role === "account_manager" && !form.accountManager.trim())}
           className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-accent text-white hover:bg-accent-hover transition-all disabled:opacity-50 disabled:cursor-not-allowed">
           <CheckCircle2 className="w-3.5 h-3.5" />
           {loading ? "Saving..." : isEdit ? "Save Changes" : "Create User"}
@@ -264,6 +293,15 @@ export default function SettingsPage() {
   // system right now, with zero extra API calls and zero manual upkeep.
   const existingSalespeople = Array.from(
     new Set(users.filter((u) => u.role === "employee" && u.salesperson).map((u) => u.salesperson as string))
+  ).sort();
+
+  // Same treatment for account manager names.
+  const existingAccountManagers = Array.from(
+    new Set(
+      users
+        .filter((u) => u.role === "account_manager" && u.accountManager)
+        .map((u) => u.accountManager as string)
+    )
   ).sort();
 
   function handleAdd(data: UserFormData) {
@@ -360,6 +398,7 @@ export default function SettingsPage() {
                 error={formError}
                 loading={createUser.isPending}
                 existingSalespeople={existingSalespeople}
+                existingAccountManagers={existingAccountManagers}
               />
             </div>
           )}
@@ -383,6 +422,9 @@ export default function SettingsPage() {
                       {u.salesperson && (
                         <span className="w-2 h-2 rounded-full flex-shrink-0"
                           style={{ backgroundColor: SALESPERSON_COLORS[u.salesperson] }} />
+                      )}
+                      {u.accountManager && (
+                        <span className="w-2 h-2 rounded-full bg-accent-purple flex-shrink-0" />
                       )}
                     </div>
                     <p className="text-xs text-slate-400 truncate">{u.email}</p>
@@ -436,18 +478,20 @@ export default function SettingsPage() {
                     <UserForm
                       isEdit
                       initial={{
-                        name:        editingUser.name,
-                        email:       editingUser.email,
-                        password:    "",
-                        role:        editingUser.role,
-                        mode:        editingUser.mode ?? "",
-                        salesperson: editingUser.salesperson ?? "",
+                        name:           editingUser.name,
+                        email:          editingUser.email,
+                        password:       "",
+                        role:           editingUser.role,
+                        mode:           editingUser.mode ?? "",
+                        salesperson:    editingUser.salesperson ?? "",
+                        accountManager: editingUser.accountManager ?? "",
                       }}
                       onSave={handleEdit}
                       onCancel={() => { setEditingUserId(null); setFormError(""); }}
                       error={formError}
                       loading={updateUser.isPending}
                       existingSalespeople={existingSalespeople}
+                      existingAccountManagers={existingAccountManagers}
                     />
                   </div>
                 )}
@@ -515,17 +559,18 @@ export default function SettingsPage() {
                   <th className="text-center px-3 py-2.5 text-slate-500 font-semibold">Accounts</th>
                   <th className="text-center px-3 py-2.5 text-slate-500 font-semibold">Exec (View)</th>
                   <th className="text-center px-3 py-2.5 text-slate-500 font-semibold">Exec (Edit)</th>
+                  <th className="text-center px-3 py-2.5 text-slate-500 font-semibold">Acct Manager</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {[
-                  ["See all data",   true,  true,  false, false],
-                  ["Record payment", true,  false, false, true ],
-                  ["Add new client", true,  false, false, true ],
-                  ["Edit client",    true,  false, false, true ],
-                  ["Stop client",    true,  false, false, true ],
-                  ["Export Excel",   true,  false, false, false],
-                  ["Settings",       true,  false, false, false],
+                  ["See all data",   true,  true,  false, false, false],
+                  ["Record payment", true,  false, false, true,  true ],
+                  ["Add new client", true,  false, false, true,  false],
+                  ["Edit client",    true,  false, false, true,  true ],
+                  ["Stop client",    true,  false, false, true,  true ],
+                  ["Export Excel",   true,  false, false, false, false],
+                  ["Settings",       true,  false, false, false, false],
                 ].map(([label, ...vals]) => (
                   <tr key={label as string} className="hover:bg-slate-50/50">
                     <td className="px-5 py-2.5 font-medium text-slate-600">{label as string}</td>

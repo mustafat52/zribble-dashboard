@@ -10,19 +10,22 @@ router.use(authenticate);
 router.get("/", async (req: Request, res: Response) => {
   try {
     const user = req.user!;
-    const { year, month, salesperson } = req.query;
+    const { year, month, salesperson, accountManager } = req.query;
 
     // Build RenewalMonth filter
     const renewalWhere: Record<string, unknown> = {};
     if (year) renewalWhere.year = parseInt(year as string);
     if (month) renewalWhere.month = parseInt(month as string);
 
-    // Build Contract filter for salesperson scoping
+    // Build Contract filter for salesperson / account manager scoping
     const contractWhere: Record<string, unknown> = {};
     if (user.role === "employee" && user.salesperson) {
       contractWhere.salesperson = user.salesperson;
-    } else if (salesperson) {
-      contractWhere.salesperson = salesperson as string;
+    } else if (user.role === "account_manager" && user.accountManager) {
+      contractWhere.accountManager = user.accountManager;
+    } else {
+      if (salesperson) contractWhere.salesperson = salesperson as string;
+      if (accountManager) contractWhere.accountManager = accountManager as string;
     }
 
     const renewals = await prisma.renewalMonth.findMany({
@@ -66,13 +69,16 @@ router.get("/", async (req: Request, res: Response) => {
 router.get("/summary", async (req: Request, res: Response) => {
   try {
     const user = req.user!;
-    const { salesperson } = req.query;
+    const { salesperson, accountManager } = req.query;
 
     const contractWhere: Record<string, unknown> = {};
     if (user.role === "employee" && user.salesperson) {
       contractWhere.salesperson = user.salesperson;
-    } else if (salesperson) {
-      contractWhere.salesperson = salesperson as string;
+    } else if (user.role === "account_manager" && user.accountManager) {
+      contractWhere.accountManager = user.accountManager;
+    } else {
+      if (salesperson) contractWhere.salesperson = salesperson as string;
+      if (accountManager) contractWhere.accountManager = accountManager as string;
     }
 
     // Group RenewalMonth rows by year+month, summing amounts and splitting by status
@@ -161,6 +167,10 @@ router.patch(
       }
 
       if (user.role === "employee" && contract.salesperson !== user.salesperson) {
+        res.status(403).json({ error: "Forbidden" });
+        return;
+      }
+      if (user.role === "account_manager" && contract.accountManager !== user.accountManager) {
         res.status(403).json({ error: "Forbidden" });
         return;
       }

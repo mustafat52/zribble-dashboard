@@ -50,6 +50,10 @@ router.post("/", canWrite, async (req: Request, res: Response) => {
       res.status(403).json({ error: "Forbidden" });
       return;
     }
+    if (user.role === "account_manager" && contract.accountManager !== user.accountManager) {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
 
     const onboarding = await prisma.onboardingPayment.upsert({
       where: { contractId },

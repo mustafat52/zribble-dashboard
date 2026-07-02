@@ -6,27 +6,29 @@ const router = Router();
 router.use(authenticate);
 
 // ── GET /dashboard/stats ──────────────────────────────────────────────────────
-// Returns aggregated KPIs. Employees see only their own pipeline.
+// Returns aggregated KPIs. Employees and account managers see only their own pipeline.
 router.get("/stats", async (req: Request, res: Response) => {
   try {
     const user = req.user!;
 
-    // Scope filter for employee
-    const salespersonFilter =
+    // Scope filter for employee / account_manager
+    const scopeFilter =
       user.role === "employee" && user.salesperson
         ? { salesperson: user.salesperson }
+        : user.role === "account_manager" && user.accountManager
+        ? { accountManager: user.accountManager }
         : {};
 
     // ── Contracts ──────────────────────────────────────────────────────────
     const [totalContracts, activeContracts, stoppedContracts] = await Promise.all([
-      prisma.contract.count({ where: salespersonFilter }),
-      prisma.contract.count({ where: { ...salespersonFilter, contractStatus: "active" } }),
-      prisma.contract.count({ where: { ...salespersonFilter, contractStatus: "stopped" } }),
+      prisma.contract.count({ where: scopeFilter }),
+      prisma.contract.count({ where: { ...scopeFilter, contractStatus: "active" } }),
+      prisma.contract.count({ where: { ...scopeFilter, contractStatus: "stopped" } }),
     ]);
 
     // ── Deal value ─────────────────────────────────────────────────────────
     const dealValueAgg = await prisma.contract.aggregate({
-      where: { ...salespersonFilter, contractStatus: "active" },
+      where: { ...scopeFilter, contractStatus: "active" },
       _sum: { dealValue: true },
     });
     const totalDealValue = dealValueAgg._sum.dealValue ?? 0;
@@ -34,7 +36,7 @@ router.get("/stats", async (req: Request, res: Response) => {
     // ── Renewal months by status ───────────────────────────────────────────
     const renewalStatusGroups = await prisma.renewalMonth.groupBy({
       by: ["status"],
-      where: { contract: salespersonFilter },
+      where: { contract: scopeFilter },
       _count: { status: true },
       _sum: { amount: true },
     });
@@ -49,7 +51,7 @@ router.get("/stats", async (req: Request, res: Response) => {
 
     // ── Total collected (sum of all payments) ──────────────────────────────
     const paymentsAgg = await prisma.payment.aggregate({
-      where: { contract: salespersonFilter, type: "renewal" },
+      where: { contract: scopeFilter, type: "renewal" },
       _sum: { amount: true },
     });
     const totalCollected = paymentsAgg._sum.amount ?? 0;
@@ -64,7 +66,7 @@ router.get("/stats", async (req: Request, res: Response) => {
 
     const upcomingRenewals = await prisma.renewalMonth.findMany({
       where: {
-        contract: { ...salespersonFilter, contractStatus: "active" },
+        contract: { ...scopeFilter, contractStatus: "active" },
         status: { in: ["pending", "partial"] },
         OR: upcoming.map((u) => ({ year: u.year, month: u.month })),
       },
@@ -84,7 +86,7 @@ router.get("/stats", async (req: Request, res: Response) => {
 
     // ── Per-salesperson breakdown (admin/accounts only) ────────────────────
     let salesBreakdown = null;
-    if (user.role !== "employee") {
+    if (user.role === "super_admin" || user.role === "accounts_team") {
       const salesGroups = await prisma.contract.groupBy({
         by: ["salesperson"],
         where: { contractStatus: "active" },
@@ -92,6 +94,24 @@ router.get("/stats", async (req: Request, res: Response) => {
         _sum: { dealValue: true },
       });
       salesBreakdown = salesGroups.map((g) => ({
+        salesperson: g.salesperson,
+        activeContracts: g._count.id,
+        totalDealValue: g._sum.dealValue ?? 0,
+      }));
+    }
+
+    // ── Per-exec breakdown (account_manager only) ───────────────────────────
+    // Shows an AM which execs' clients make up their own portfolio, e.g.
+    // "of my 40 clients, 15 belong to Aftab, 10 to Sarvesh..."
+    let execBreakdown = null;
+    if (user.role === "account_manager") {
+      const execGroups = await prisma.contract.groupBy({
+        by: ["salesperson"],
+        where: { ...scopeFilter, contractStatus: "active" },
+        _count: { id: true },
+        _sum: { dealValue: true },
+      });
+      execBreakdown = execGroups.map((g) => ({
         salesperson: g.salesperson,
         activeContracts: g._count.id,
         totalDealValue: g._sum.dealValue ?? 0,
@@ -107,6 +127,7 @@ router.get("/stats", async (req: Request, res: Response) => {
       renewalsByStatus: byStatus,
       upcomingRenewals,
       salesBreakdown,
+      execBreakdown,
     });
   } catch (err) {
     console.error(err);

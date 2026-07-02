@@ -245,7 +245,7 @@ export function PaymentHistory() {
                                 {r.payments.map((p: any) => (
                                   <div key={p.id} className="flex items-center justify-between text-xs bg-white px-3 py-2 rounded-lg border border-slate-200 gap-3">
                                     <span className="text-slate-400 flex-shrink-0">{formatDate ? formatDate(p.paidOn) : p.paidOn}</span>
-                                    <span className="text-slate-500 flex-shrink-0">{p.recordedBy}</span>
+                                    <span className="text-slate-500 flex-shrink-0">Recorded by: {p.recordedBy}</span>
                                     {p.notes && <span className="text-slate-400 italic truncate flex-1">{p.notes}</span>}
                                     <span className="font-semibold text-accent-green flex-shrink-0">{formatCurrency(p.amount)}</span>
                                     {/* Delete payment — only for users with edit permission */}
