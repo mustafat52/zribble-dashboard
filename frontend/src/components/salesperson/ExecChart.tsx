@@ -6,6 +6,11 @@ import { formatCurrency, getMonthShort, SALESPERSON_COLORS } from "@/lib/utils";
 import { Card, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 
+// Flat accent used for Account Manager charts — AMs don't have individual
+// per-name colors the way execs do via SALESPERSON_COLORS. Swap for your
+// real --accent-purple CSS var/hex if it differs from this value.
+const AM_COLOR = "#7C3AED";
+
 type YearFilter = 2026 | 2027 | 2028;
 const YEARS: YearFilter[] = [2026, 2027, 2028];
 
@@ -25,14 +30,22 @@ const CustomTooltip = ({ active, payload, label, color }: any) => {
   );
 };
 
-export function ExecChart({ exec }: { exec: string }) {
+interface ExecChartProps {
+  exec: string;
+  /** "exec" (default) scopes by salesperson; "am" scopes by accountManager */
+  dimension?: "exec" | "am";
+}
+
+export function ExecChart({ exec, dimension = "exec" }: ExecChartProps) {
   const [year, setYear] = useState<YearFilter>(2026);
-  const color = SALESPERSON_COLORS[exec];
+  const color = dimension === "am" ? AM_COLOR : (SALESPERSON_COLORS[exec] ?? "#3B82F6");
   const { data: allContracts = [], isLoading } = useContracts();
 
   const contracts = useMemo(
-    () => allContracts.filter((c) => c.salesperson === exec),
-    [allContracts, exec]
+    () => allContracts.filter((c) =>
+      dimension === "am" ? c.accountManager === exec : c.salesperson === exec
+    ),
+    [allContracts, exec, dimension]
   );
 
   const data = useMemo(() =>

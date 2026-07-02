@@ -2,14 +2,30 @@ import * as XLSX from "xlsx";
 import { Contract } from "@/types";
 import { MONTH_COLS } from "./utils";
 
-export function exportSalespersonExcel(exec: string, contracts: Contract[]) {
+/**
+ * @param exec The exec or AM name this export is scoped to
+ * @param contracts Already-filtered contracts for that exec/AM
+ * @param dimension "exec" (default) scoped by salesperson; "am" scoped by accountManager.
+ *   Affects the filename tag and which cross-info column is shown — when
+ *   scoped to an exec, the Account Manager column is the useful varying
+ *   info; when scoped to an AM, that column is constant/redundant on every
+ *   row, so it's swapped for Salesperson instead.
+ */
+export function exportSalespersonExcel(
+  exec: string,
+  contracts: Contract[],
+  dimension: "exec" | "am" = "exec"
+) {
   const today = new Date();
   const dateStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}-${String(today.getDate()).padStart(2,"0")}`;
-  const filename = `ZribbleOS_${exec}_${dateStr}.xlsx`;
+  const filenameTag = dimension === "am" ? `AM_${exec}` : exec;
+  const filename = `ZribbleOS_${filenameTag}_${dateStr}.xlsx`;
+
+  const crossColumnLabel = dimension === "am" ? "Salesperson" : "Account Manager";
 
   // Build header row
   const headers = [
-    "Client", "Product", "Account Manager", "Contract ID",
+    "Client", "Product", crossColumnLabel, "Contract ID",
     "Profiles", "GST", "Deal Value (₹)", "Term (months)", "First Renewal",
     ...MONTH_COLS,
     "Total Pipeline (₹)",
@@ -30,7 +46,7 @@ export function exportSalespersonExcel(exec: string, contracts: Contract[]) {
     return [
       c.clientName,
       c.product,
-      c.accountManager,
+      dimension === "am" ? c.salesperson : c.accountManager,
       c.contractId || "",
       c.profiles,
       c.gstStatus === "Y" ? "Yes" : "No",
@@ -69,7 +85,7 @@ export function exportSalespersonExcel(exec: string, contracts: Contract[]) {
   const colWidths = [
     { wch: 30 }, // Client
     { wch: 22 }, // Product
-    { wch: 16 }, // AM
+    { wch: 16 }, // AM / Salesperson (dimension-dependent)
     { wch: 10 }, // Contract ID
     { wch: 8  }, // Profiles
     { wch: 6  }, // GST
@@ -85,6 +101,8 @@ export function exportSalespersonExcel(exec: string, contracts: Contract[]) {
   ws["!freeze"] = { xSplit: 0, ySplit: 1 };
 
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, exec);
+  // Sheet names can't exceed 31 chars or contain certain characters —
+  // keep it simple and just use the exec/AM name as before.
+  XLSX.utils.book_append_sheet(wb, ws, exec.slice(0, 31));
   XLSX.writeFile(wb, filename);
 }

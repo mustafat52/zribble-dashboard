@@ -5,12 +5,25 @@ import { formatCurrency, SALESPERSON_COLORS } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { Users, IndianRupee, CalendarDays, TrendingUp } from "lucide-react";
 
-export function ExecStats({ exec }: { exec: string }) {
+// Flat accent used for Account Manager stats — AMs don't have individual
+// per-name colors the way execs do via SALESPERSON_COLORS. Swap for your
+// real --accent-purple CSS var/hex if it differs from this value.
+const AM_COLOR = "#7C3AED";
+
+interface ExecStatsProps {
+  exec: string;
+  /** "exec" (default) scopes by salesperson; "am" scopes by accountManager */
+  dimension?: "exec" | "am";
+}
+
+export function ExecStats({ exec, dimension = "exec" }: ExecStatsProps) {
   const { data: allContracts = [], isLoading } = useContracts();
-  const color = SALESPERSON_COLORS[exec];
+  const color = dimension === "am" ? AM_COLOR : (SALESPERSON_COLORS[exec] ?? "#3B82F6");
 
   const stats = useMemo(() => {
-    const contracts = allContracts.filter((c) => c.salesperson === exec);
+    const contracts = allContracts.filter((c) =>
+      dimension === "am" ? c.accountManager === exec : c.salesperson === exec
+    );
     const totalAccounts      = new Set(contracts.map((c) => c.clientName)).size;
     const totalContractValue = contracts.reduce((a, c) => a + c.dealValue, 0);
     const renewals2026 = contracts.reduce((a, c) =>
@@ -21,7 +34,7 @@ export function ExecStats({ exec }: { exec: string }) {
       a + (c.renewalSchedule ?? []).filter((r) => r.year === 2028).reduce((b, r) => b + r.amount, 0), 0);
     const totalPipeline = renewals2026 + renewals2027 + renewals2028;
     return { totalAccounts, totalContractValue, renewals2026, renewals2027, renewals2028, totalPipeline };
-  }, [allContracts, exec]);
+  }, [allContracts, exec, dimension]);
 
   if (isLoading) {
     return (

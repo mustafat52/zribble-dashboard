@@ -6,6 +6,7 @@ import { ExecSelector } from "@/components/salesperson/ExecSelector";
 import { ExecStats } from "@/components/salesperson/ExecStats";
 import { ExecChart } from "@/components/salesperson/ExecChart";
 import { ExecContractTable } from "@/components/salesperson/ExecContractTable";
+import { ExecCrossBreakdown } from "@/components/salesperson/ExecCrossBreakdown";
 import { PaymentModal, PaymentPromise } from "@/components/renewals/PaymentModal";
 import { SALESPERSON_COLORS } from "@/lib/utils";
 import { useContracts } from "@/lib/api";
@@ -15,27 +16,49 @@ import { useClient } from "@/lib/client-context";
 import { Download, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+// Flat accent used for Account Manager views — AMs don't have individual
+// per-name colors the way execs do via SALESPERSON_COLORS. Swap for your
+// real --accent-purple CSS var/hex if it differs from this value.
+const AM_COLOR = "#7C3AED";
+
 interface PaymentTarget { contractId: string; year: number; month: number; }
+type Dimension = "exec" | "am";
 
 export default function SalespersonContent() {
   const searchParams = useSearchParams();
   const { user, canPerform } = useAuth();
   const { recordPayment } = useClient();
   const [exec,          setExec]          = useState("Aftab");
+  const [dimension,     setDimension]     = useState<Dimension>("exec");
   const [paymentTarget, setPaymentTarget] = useState<PaymentTarget | null>(null);
   const [exporting,     setExporting]     = useState(false);
 
   useEffect(() => {
     const qExec = searchParams.get("exec");
-    // Employees can only see their own exec
-    if (qExec && (canPerform("view_all") || user?.salesperson === qExec)) {
-      setExec(qExec);
-    } else if (!canPerform("view_all") && user?.salesperson) {
+    const qDim: Dimension = searchParams.get("dimension") === "am" ? "am" : "exec";
+
+    // Admins/accounts team can view anything named in the URL.
+    if (canPerform("view_all")) {
+      setDimension(qDim);
+      if (qExec) setExec(qExec);
+      return;
+    }
+
+    // Everyone else is hard-locked to their own scope, regardless of what
+    // the URL says — this is a UX/defense-in-depth guard; the backend
+    // already scopes /contracts per role independently, so this can't
+    // actually leak data, it just keeps the view sensible for the person
+    // looking at it.
+    if (user?.role === "account_manager" && user?.accountManager) {
+      setDimension("am");
+      setExec(user.accountManager);
+    } else if (user?.salesperson) {
+      setDimension("exec");
       setExec(user.salesperson);
     }
   }, [searchParams, user, canPerform]);
 
-  const color = SALESPERSON_COLORS[exec];
+  const color = dimension === "am" ? AM_COLOR : (SALESPERSON_COLORS[exec] ?? "#3B82F6");
 
   function openPayment(contractId: string, year: number, month: number) {
     setPaymentTarget({ contractId, year, month });
@@ -47,8 +70,10 @@ export default function SalespersonContent() {
     setExporting(true);
     await new Promise((r) => setTimeout(r, 80));
     try {
-      const contracts = allContracts.filter((c) => c.salesperson === exec);
-      exportSalespersonExcel(exec, contracts);
+      const contracts = allContracts.filter((c) =>
+        dimension === "am" ? c.accountManager === exec : c.salesperson === exec
+      );
+      exportSalespersonExcel(exec, contracts, dimension);
     } finally {
       setExporting(false);
     }
@@ -76,7 +101,7 @@ export default function SalespersonContent() {
       <div className="mb-5 flex items-start justify-between">
         <div>
           <h2 className="text-lg font-semibold text-slate-800">
-            Salesperson View — <span style={{ color }}>{exec}</span>
+            {dimension === "am" ? "Account Manager View" : "Salesperson View"} — <span style={{ color }}>{exec}</span>
           </h2>
           <p className="text-xs text-slate-400 mt-0.5">Per-executive portfolio, renewal schedule and contract breakdown.</p>
         </div>
@@ -95,17 +120,18 @@ export default function SalespersonContent() {
         )}
       </div>
 
-      {/* Only show exec selector if can view all */}
+      {/* Only show the exec/AM selector if can view all */}
       {canPerform("view_all") && (
         <div className="mb-6">
-          <ExecSelector selected={exec} onChange={setExec} />
+          <ExecSelector selected={exec} onChange={setExec} dimension={dimension} />
         </div>
       )}
 
       <div className="flex flex-col gap-5">
-        <ExecStats exec={exec} />
-        <ExecChart exec={exec} />
-        <ExecContractTable exec={exec} onMarkPayment={openPayment} />
+        <ExecStats exec={exec} dimension={dimension} />
+        <ExecCrossBreakdown exec={exec} dimension={dimension} />
+        <ExecChart exec={exec} dimension={dimension} />
+        <ExecContractTable exec={exec} dimension={dimension} onMarkPayment={openPayment} />
       </div>
 
       {paymentTarget && (

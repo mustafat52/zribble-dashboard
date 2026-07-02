@@ -12,18 +12,31 @@ import { Search, CreditCard, ChevronDown, ChevronUp, FileText } from "lucide-rea
 import { ClientLink } from "@/components/clients/ClientLink";
 import { cn } from "@/lib/utils";
 
+// Flat accent used for Account Manager views — AMs don't have individual
+// per-name colors the way execs do via SALESPERSON_COLORS. Swap for your
+// real --accent-purple CSS var/hex if it differs from this value.
+const AM_COLOR = "#7C3AED";
+
 interface ExecContractTableProps {
   exec: string;
   onMarkPayment: (contractId: string, year: number, month: number) => void;
+  /** "exec" (default) scopes by salesperson; "am" scopes by accountManager */
+  dimension?: "exec" | "am";
 }
 
-export function ExecContractTable({ exec, onMarkPayment }: ExecContractTableProps) {
+export function ExecContractTable({ exec, onMarkPayment, dimension = "exec" }: ExecContractTableProps) {
   const [search,   setSearch]   = useState("");
   const [expanded, setExpanded] = useState<string | null>(null);
   const [sortDir,  setSortDir]  = useState<"asc" | "desc">("desc");
 
   const { data: allContracts = [], isLoading } = useContracts();
-  const color = SALESPERSON_COLORS[exec];
+  const color = dimension === "am" ? AM_COLOR : (SALESPERSON_COLORS[exec] ?? "#3B82F6");
+
+  // When scoped to an exec, the AM column is the useful cross-info (varies
+  // per row). When scoped to an AM, that AM value is constant/redundant on
+  // every row — swap the column to show the Salesperson instead, which is
+  // now the varying, useful field.
+  const crossColumnLabel = dimension === "am" ? "Exec" : "AM";
 
   const now = useMemo(() => {
     const d = new Date();
@@ -31,8 +44,10 @@ export function ExecContractTable({ exec, onMarkPayment }: ExecContractTableProp
   }, []);
 
   const contracts = useMemo(
-    () => allContracts.filter((c) => c.salesperson === exec),
-    [allContracts, exec]
+    () => allContracts.filter((c) =>
+      dimension === "am" ? c.accountManager === exec : c.salesperson === exec
+    ),
+    [allContracts, exec, dimension]
   );
 
   const filtered = useMemo(() => {
@@ -40,7 +55,8 @@ export function ExecContractTable({ exec, onMarkPayment }: ExecContractTableProp
     if (search.trim()) data = data.filter((c) =>
       c.clientName.toLowerCase().includes(search.toLowerCase()) ||
       c.product.toLowerCase().includes(search.toLowerCase()) ||
-      c.accountManager.toLowerCase().includes(search.toLowerCase())
+      c.accountManager.toLowerCase().includes(search.toLowerCase()) ||
+      c.salesperson.toLowerCase().includes(search.toLowerCase())
     );
     return [...data].sort((a, b) => sortDir === "desc" ? b.dealValue - a.dealValue : a.dealValue - b.dealValue);
   }, [contracts, search, sortDir]);
@@ -73,7 +89,7 @@ export function ExecContractTable({ exec, onMarkPayment }: ExecContractTableProp
             <THead>
               <Th>Client</Th>
               <Th>Product</Th>
-              <Th>AM</Th>
+              <Th>{crossColumnLabel}</Th>
               <Th>GST</Th>
               <Th>Term</Th>
               <Th>Deal Value</Th>
@@ -96,7 +112,7 @@ export function ExecContractTable({ exec, onMarkPayment }: ExecContractTableProp
                     <Tr key={c.id} onClick={() => setExpanded(isExpanded ? null : c.id)} className={cn(isExpanded && "bg-slate-50")}>
                       <Td><ClientLink clientName={c.clientName} salesperson={c.salesperson} showDot /></Td>
                       <Td><span className="text-xs px-2 py-0.5 rounded bg-slate-100 text-slate-500 border border-slate-200">{c.product}</span></Td>
-                      <Td><span className="text-slate-400 text-xs">{c.accountManager}</span></Td>
+                      <Td><span className="text-slate-400 text-xs">{dimension === "am" ? c.salesperson : c.accountManager}</span></Td>
                       <Td><span className={cn("text-xs font-medium", c.gstStatus === "Y" ? "text-accent-cyan" : "text-slate-300")}>{c.gstStatus === "Y" ? "GST" : "—"}</span></Td>
                       <Td><span className="text-slate-400">{c.contractTermMonths}m</span></Td>
                       <Td><span className="font-semibold text-slate-700">{formatCurrency(c.dealValue)}</span></Td>
