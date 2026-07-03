@@ -429,7 +429,7 @@ export default function NewEntryPage() {
                       error={errors.accountManager}
                     />
                     <Input
-                      label="Contract ID (optional)"
+                      label="Client ID (optional)"
                       placeholder="e.g. 14700"
                       value={form.contractId ?? ""}
                       onChange={(e) => update("contractId", e.target.value)}
