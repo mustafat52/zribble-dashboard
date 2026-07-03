@@ -180,9 +180,13 @@ export function ClientProvider({ children }: { children: ReactNode }) {
   );
 
   // ── Onboarding ────────────────────────────────────────────────────────────────
+  // A client can have multiple services (multiple contracts), each with its
+  // own onboarding payment outcome. Dedupe by contractId, NOT clientName —
+  // deduping by clientName meant a second service's onboarding record would
+  // silently overwrite the first service's record in this local cache.
   const addOnboardingPayment = useCallback((p: OnboardingPayment) => {
     setOnboardingPayments((prev) => {
-      const exists = prev.findIndex((x) => x.clientName === p.clientName);
+      const exists = prev.findIndex((x) => x.contractId === p.contractId);
       if (exists >= 0) { const next = [...prev]; next[exists] = p; return next; }
       return [...prev, p];
     });

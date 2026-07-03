@@ -134,10 +134,14 @@ export function useCreateNote() {
 }
 
 // ─── Onboarding ───────────────────────────────────────────────────────────────
+// A client can have multiple services (multiple contracts), each with its
+// own onboarding payment outcome. This returns ALL of them for the client,
+// not just one — the backend used to collapse multiple services down to a
+// single record via findFirst; it now returns the full array.
 export function useOnboarding(clientName: string) {
-  return useQuery<OnboardingPayment | null>({
+  return useQuery<OnboardingPayment[]>({
     queryKey: ["onboarding", clientName],
-    queryFn:  () => apiFetch<OnboardingPayment>(`/onboarding/${encodeURIComponent(clientName)}`).catch(() => null),
+    queryFn:  () => apiFetch<OnboardingPayment[]>(`/onboarding/${encodeURIComponent(clientName)}`).catch(() => []),
     enabled:  !!clientName,
     staleTime: 60_000,
   });

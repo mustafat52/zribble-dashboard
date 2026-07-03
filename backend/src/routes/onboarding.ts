@@ -7,21 +7,22 @@ const router = Router();
 router.use(authenticate);
 
 // ── GET /onboarding/:clientName ───────────────────────────────────────────────
+// A client can have multiple services (multiple contracts), each with its own
+// onboarding payment outcome — OnboardingPayment.contractId is unique, not
+// clientName. Returns ALL onboarding records for this client (one per
+// service that has one), not just the first match, so a client with e.g. DM
+// "not collected" and GMB "collected" shows both instead of one silently
+// overwriting the other in the response.
 router.get("/:clientName", async (req: Request, res: Response) => {
   try {
-    const onboarding = await prisma.onboardingPayment.findFirst({
+    const onboardings = await prisma.onboardingPayment.findMany({
       where: { clientName: decodeURIComponent(req.params.clientName) },
     });
 
-    if (!onboarding) {
-      res.status(404).json({ error: "Onboarding payment not found" });
-      return;
-    }
-
-    res.json(onboarding);
+    res.json(onboardings);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Failed to fetch onboarding payment" });
+    res.status(500).json({ error: "Failed to fetch onboarding payments" });
   }
 });
 

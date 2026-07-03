@@ -225,7 +225,22 @@ export default function NewEntryPage() {
 
       const realContractId = created.id;
 
-      if (onboardingStatus !== "not_collected" && paidAmount > 0) {
+      // Always record an onboarding payment outcome, even when nothing was
+      // collected — a client on a trial with ₹0 collected is meaningfully
+      // different from a client this form never captured onboarding data
+      // for at all. Without this, "Not Collected" silently vanished and the
+      // client modal had no way to show "trial, hasn't paid yet."
+      if (onboardingStatus === "not_collected") {
+        addOnboardingPayment({
+          contractId:      realContractId,
+          clientName:      form.clientName,
+          salesperson:     form.salesperson,
+          status:          "not_collected",
+          amountCollected: 0,
+          paidOn:          onboardingDate,
+          notes:           onboardingNotes || undefined,
+        });
+      } else if (paidAmount > 0) {
         addOnboardingPayment({
           contractId:      realContractId,
           clientName:      form.clientName,
@@ -641,6 +656,16 @@ export default function NewEntryPage() {
                             leftIcon={<FileText className="w-3.5 h-3.5" />}
                           />
                         </>
+                      )}
+
+                      {onboardingStatus === "not_collected" && (
+                        <Input
+                          label="Notes (optional)"
+                          placeholder="e.g. Client on trial, will pay after evaluation"
+                          value={onboardingNotes}
+                          onChange={(e) => setOnboardingNotes(e.target.value)}
+                          leftIcon={<FileText className="w-3.5 h-3.5" />}
+                        />
                       )}
 
                       {onboardingStatus !== "not_collected" && paidAmount > 0 && (

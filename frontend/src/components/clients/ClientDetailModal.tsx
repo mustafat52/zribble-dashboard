@@ -11,7 +11,7 @@ import {
   User, Package, CalendarDays, IndianRupee, CreditCard,
   Ban, RefreshCw, AlertTriangle, CheckCircle2, Clock,
   FileText, ChevronUp, MessageSquare, Plus, Send, Trash2,
-  Pencil, X, History, PauseCircle, PlayCircle, AlertCircle,
+  Pencil, X, History, PauseCircle, AlertCircle,
 } from "lucide-react";
 import { useState } from "react";
 import { PaymentStatus } from "@/types";
@@ -370,14 +370,14 @@ export function ClientDetailModal({ open, onClose, contracts, onMarkPayment, isS
 
   const {
     getEffectiveAmount, recordPayment,
-    editContract, stopContract, reactivateContract, isContractStopped,
+    editContract, stopContract, isContractStopped,
     getContractEdits, getEffectiveContract,
   } = useClient();
   // Pull live promises and notes from backend so we can show + delete/add them
   
   const { data: allPromises = [] } = usePromises();
   const deletePromiseMutation = useDeletePromise();
-  const { data: onboardingPayment } = useOnboarding(contracts[0]?.clientName ?? "");
+  const { data: onboardingPayments = [] } = useOnboarding(contracts[0]?.clientName ?? "");
   const { data: clientNotes = [] } = useNotes(contracts[0]?.clientName ?? "");
   const createNoteMutation = useCreateNote();
 
@@ -420,9 +420,18 @@ export function ClientDetailModal({ open, onClose, contracts, onMarkPayment, isS
 
   const primary    = contracts[0];
   const color      = SALESPERSON_COLORS[primary.salesperson];
-  const totalValue = contracts.reduce((a, c) => a + getEffectiveContract(c).dealValue, 0);
 
-  const allRenewals = contracts
+  // Stopped services are fully hidden from this modal (Contracts cards,
+  // overview tiles, and the Renewal Timeline) — once stopped, a service is
+  // gone from view here entirely, no "stale red card" state. Historical
+  // Payment Log entries are the one exception: those stay visible below,
+  // computed from the FULL `contracts` list further down, because money
+  // that was already collected for a since-stopped service is still a real
+  // financial record and shouldn't disappear just because the service ended.
+  const activeContracts = contracts.filter((c) => !isContractStopped(c.id));
+  const totalValue = activeContracts.reduce((a, c) => a + getEffectiveContract(c).dealValue, 0);
+
+  const allRenewals = activeContracts
     .flatMap((c) => c.renewalSchedule.map((r) => ({ ...r, contract: c })))
     .sort((a, b) => (a.year*100+a.month) - (b.year*100+b.month));
 
@@ -443,6 +452,20 @@ export function ClientDetailModal({ open, onClose, contracts, onMarkPayment, isS
       )
     )
     .sort((a: any, b: any) => new Date(b.paidOn).getTime() - new Date(a.paidOn).getTime());
+
+  // Onboarding entries, one per service that has one — labeled with the
+  // contract's product so "who paid what for which service" is unambiguous.
+  // Built from the FULL contracts list (not activeContracts), same
+  // historical-preservation policy as allPaymentLog above: a service being
+  // stopped later shouldn't erase the record of what happened at signing.
+  const onboardingEntries = contracts
+    .map((c) => {
+      const ob = onboardingPayments.find((p) => p.contractId === c.id);
+      return ob ? { ...ob, product: c.product } : null;
+    })
+    .filter((x): x is (typeof onboardingPayments)[number] & { product: string } => x !== null);
+
+  const notCollectedCount = onboardingEntries.filter((ob) => ob.status === "not_collected").length;
 
 
 
@@ -490,7 +513,7 @@ export function ClientDetailModal({ open, onClose, contracts, onMarkPayment, isS
             { label:"Salesperson", value:primary.salesperson,        icon:User,        color:"text-slate-700"    },
             { label:"Account Mgr", value:primary.accountManager,     icon:User,        color:"text-slate-700"    },
             { label:"Total Value", value:formatCurrency(totalValue),  icon:IndianRupee, color:"text-accent-green" },
-            { label:"Services",    value:contracts.length.toString(), icon:Package,     color:"text-accent"       },
+            { label:"Services",    value:activeContracts.length.toString(), icon:Package,     color:"text-accent"       },
           ].map(({ label, value, icon: Icon, color: c }) => (
             <div key={label} className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5">
               <div className="flex items-center gap-1.5 mb-1">
@@ -516,19 +539,23 @@ export function ClientDetailModal({ open, onClose, contracts, onMarkPayment, isS
             )}
           </div>
           <div className="space-y-2">
-            {contracts.map((c) => {
-              const effective    = getEffectiveContract(c);
-              const isEditing    = editingContractId === c.id;
-              const isSvcStopped = isContractStopped(c.id);
-              const edits        = getContractEdits(c.id);
+            {activeContracts.length === 0 && (
+              <div className="px-4 py-6 text-center border border-dashed border-slate-200 rounded-xl">
+                <Package className="w-6 h-6 text-slate-300 mx-auto mb-2" />
+                <p className="text-xs text-slate-400">No active services — all services for this client have been stopped.</p>
+              </div>
+            )}
+            {activeContracts.map((c) => {
+              const effective = getEffectiveContract(c);
+              const isEditing = editingContractId === c.id;
+              const edits     = getContractEdits(c.id);
               return (
-                <div key={c.id} className={cn("border rounded-xl overflow-hidden transition-all", isSvcStopped ? "border-red-200 opacity-60" : "border-slate-200")}>
-                  <div className={cn("p-3", isSvcStopped ? "bg-accent-redLight/30" : "bg-slate-50")}>
+                <div key={c.id} className="border rounded-xl overflow-hidden transition-all border-slate-200">
+                  <div className="p-3 bg-slate-50">
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-2 min-w-0">
                         <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
                         <span className="text-sm font-semibold text-slate-700 truncate">{effective.product}</span>
-                        {isSvcStopped && <span className="text-[10px] font-semibold text-accent-red bg-accent-redLight px-1.5 py-0.5 rounded-full flex-shrink-0">Stopped</span>}
                         {edits.length > 0 && (
                           <span className="text-[10px] text-accent bg-accent-light px-1.5 py-0.5 rounded-full border border-accent-border flex-shrink-0 flex items-center gap-0.5">
                             <History className="w-2.5 h-2.5"/> {edits.length} edit{edits.length>1?"s":""}
@@ -539,27 +566,16 @@ export function ClientDetailModal({ open, onClose, contracts, onMarkPayment, isS
                         <span className="text-sm font-bold text-slate-700">{formatCurrency(effective.dealValue)}</span>
                         {editMode && canEdit && (
                           <div className="flex items-center gap-1">
-                            {isSvcStopped ? (
-                              canStop && (
-                                <button onClick={()=>reactivateContract(c.id)}
-                                  className="flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-lg border border-accent-green text-accent-green bg-accent-greenLight hover:bg-emerald-100 transition-all">
-                                  <PlayCircle className="w-3 h-3"/> Reactivate
-                                </button>
-                              )
-                            ) : (
-                              <>
-                                <button onClick={()=>setEditingContractId(isEditing?null:c.id)}
-                                  className={cn("flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-lg border transition-all",
-                                    isEditing?"bg-slate-100 text-slate-500 border-slate-200":"bg-accent text-white border-accent hover:bg-accent-hover shadow-sm")}>
-                                  {isEditing?<><X className="w-3 h-3"/>Cancel</>:<><Pencil className="w-3 h-3"/>Edit</>}
-                                </button>
-                                {canStop && (
-                                  <button onClick={()=>stopContract(c.id)}
-                                    className="flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-lg border border-red-200 text-accent-red bg-accent-redLight hover:bg-red-100 transition-all">
-                                    <PauseCircle className="w-3 h-3"/> Stop
-                                  </button>
-                                )}
-                              </>
+                            <button onClick={()=>setEditingContractId(isEditing?null:c.id)}
+                              className={cn("flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-lg border transition-all",
+                                isEditing?"bg-slate-100 text-slate-500 border-slate-200":"bg-accent text-white border-accent hover:bg-accent-hover shadow-sm")}>
+                              {isEditing?<><X className="w-3 h-3"/>Cancel</>:<><Pencil className="w-3 h-3"/>Edit</>}
+                            </button>
+                            {canStop && (
+                              <button onClick={()=>stopContract(c.id)}
+                                className="flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-lg border border-red-200 text-accent-red bg-accent-redLight hover:bg-red-100 transition-all">
+                                <PauseCircle className="w-3 h-3"/> Stop
+                              </button>
                             )}
                           </div>
                         )}
@@ -623,56 +639,6 @@ export function ClientDetailModal({ open, onClose, contracts, onMarkPayment, isS
           )}
         </div>
 
-        {/* Onboarding payment */}
-        {onboardingPayment && (
-          <div>
-            <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-widest mb-3">Payment Timeline</p>
-            <div className="relative pl-5">
-              <div className="absolute left-1.5 top-3 bottom-3 w-px bg-slate-200" />
-              <div className="relative mb-4">
-                <div className={cn("absolute -left-5 top-2 w-3 h-3 rounded-full border-2 border-white",
-                  onboardingPayment.status==="collected"?"bg-accent-green":onboardingPayment.status==="partial"?"bg-accent-amber":"bg-slate-300")} />
-                <div className={cn("border rounded-xl p-3",
-                  onboardingPayment.status==="collected"?"bg-accent-greenLight border-emerald-200":onboardingPayment.status==="partial"?"bg-accent-amberLight border-amber-200":"bg-slate-50 border-slate-200")}>
-                  <div className="flex items-center justify-between mb-1">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold text-slate-700">Onboarding Payment</span>
-                      <StatusBadge status={onboardingPayment.status==="not_collected"?"pending":onboardingPayment.status} size="sm" />
-                    </div>
-                    <span className={cn("text-sm font-bold",onboardingPayment.status==="collected"?"text-accent-green":onboardingPayment.status==="partial"?"text-accent-amber":"text-slate-400")}>
-                      {onboardingPayment.status==="not_collected"?"Not collected":formatCurrency(onboardingPayment.amountCollected)}
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-400">{onboardingPayment.paidOn} · Initial deal payment</p>
-                  {onboardingPayment.notes && <p className="text-[11px] text-slate-500 mt-0.5 italic">{onboardingPayment.notes}</p>}
-
-                  {onboardingPayment.status === "partial" && (() => {
-                    const onboardDate = new Date(onboardingPayment.paidOn);
-                    const onboardPromises = clientPromises.filter(
-                      (p) => p.renewalYear === onboardDate.getFullYear() && p.renewalMonth === onboardDate.getMonth() + 1
-                    );
-                    if (!onboardPromises.length) return null;
-                    return (
-                      <div className="mt-2 pt-2 border-t border-amber-200 space-y-1">
-                        <p className="text-[10px] font-semibold text-amber-700 uppercase tracking-wide">Promised Payments</p>
-                        {onboardPromises.map((p) => (
-                          <div key={p.id} className="flex items-center justify-between px-2 py-1 bg-white border border-amber-200 rounded-lg">
-                            <span className="text-[11px] text-amber-700">
-                              {new Date(p.promisedDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
-                              {p.notes && <span className="italic text-amber-500"> · {p.notes}</span>}
-                            </span>
-                            <span className="text-xs font-semibold text-accent-amber">{formatCurrency(p.remainingAmount)}</span>
-                          </div>
-                        ))}
-                      </div>
-                    );
-                  })()}
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* Renewal timeline */}
         <div>
           <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-widest mb-3">
@@ -700,7 +666,6 @@ export function ClientDetailModal({ open, onClose, contracts, onMarkPayment, isS
                     return (
                       <div key={key}>
                         <div className={cn("flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl border transition-all",
-                          isContractStopped(r.contract.id)?"opacity-40 bg-slate-50 border-slate-200":
                           isActive?"bg-accent-light/20 border-accent-border":"bg-slate-50 border-slate-200 hover:border-slate-300")}>
                           <div className="flex items-center gap-2 min-w-0">
                             <CalendarDays className="w-3 h-3 text-slate-400 flex-shrink-0" />
@@ -785,14 +750,14 @@ export function ClientDetailModal({ open, onClose, contracts, onMarkPayment, isS
             <div className="flex items-center gap-2">
               <CreditCard className="w-3.5 h-3.5 text-slate-500" />
               <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Payment Log</p>
-              {allPaymentLog.length > 0 && (
+              {(allPaymentLog.length + onboardingEntries.length) > 0 && (
                 <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-accent-light text-accent border border-accent-border">
-                  {allPaymentLog.length}
+                  {allPaymentLog.length + onboardingEntries.length}
                 </span>
               )}
-              {onboardingPayment && onboardingPayment.status !== "not_collected" && (
-                <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-accent-greenLight text-accent-green border border-emerald-200">
-                  +1 onboarding
+              {notCollectedCount > 0 && (
+                <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-accent-redLight text-accent-red border border-red-200">
+                  {notCollectedCount} not collected
                 </span>
               )}
             </div>
@@ -801,31 +766,69 @@ export function ClientDetailModal({ open, onClose, contracts, onMarkPayment, isS
 
           {showPaymentLog && (
             <div className="divide-y divide-slate-100">
-              {/* Onboarding entry */}
-              {onboardingPayment && onboardingPayment.status !== "not_collected" && (
-                <div className="flex items-center gap-3 px-4 py-3 bg-accent-greenLight/30">
-                  <div className="w-1.5 h-8 rounded-full bg-accent-green flex-shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-semibold text-slate-700">Onboarding Payment</p>
-                    <p className="text-[11px] text-slate-400 mt-0.5">
-                      {onboardingPayment.paidOn}
-                      {onboardingPayment.notes && <span className="italic"> · {onboardingPayment.notes}</span>}
-                    </p>
-                  </div>
-                  <div className="text-right flex-shrink-0">
-                    <p className="text-sm font-bold text-accent-green">{formatCurrency(onboardingPayment.amountCollected)}</p>
-                    <p className="text-[10px] text-slate-400 uppercase tracking-wide">Onboarding</p>
-                  </div>
-                </div>
-              )}
-
-              {/* Renewal payment entries */}
-              {allPaymentLog.length === 0 && !onboardingPayment && (
+              {allPaymentLog.length === 0 && onboardingEntries.length === 0 && (
                 <div className="px-4 py-6 text-center">
                   <CreditCard className="w-6 h-6 text-slate-300 mx-auto mb-2" />
                   <p className="text-xs text-slate-400">No payments recorded yet</p>
                 </div>
               )}
+
+              {/* Onboarding entries — one per service, labeled by product.
+                  "Not Collected" ones show too (₹0, muted) instead of
+                  vanishing, so a trial client with no payment yet is still
+                  visible here rather than leaving no trace at all. */}
+              {onboardingEntries.map((ob) => {
+                const isNotCollected = ob.status === "not_collected";
+                const onboardDate = new Date(ob.paidOn);
+                const onboardPromises = ob.status === "partial"
+                  ? clientPromises.filter(
+                      (p) => p.contractId === ob.contractId
+                        && p.renewalYear === onboardDate.getFullYear()
+                        && p.renewalMonth === onboardDate.getMonth() + 1
+                    )
+                  : [];
+                return (
+                  <div key={`onboarding-${ob.contractId}`}
+                    className={cn("px-4 py-3", isNotCollected ? "bg-slate-50/60" : "bg-accent-greenLight/20")}>
+                    <div className="flex items-center gap-3">
+                      <div className={cn("w-1.5 h-8 rounded-full flex-shrink-0",
+                        isNotCollected ? "bg-slate-300" : ob.status === "partial" ? "bg-accent-amber" : "bg-accent-green")} />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-semibold text-slate-700">
+                          Onboarding · <span className="font-normal text-slate-500">{ob.product}</span>
+                        </p>
+                        <p className="text-[11px] text-slate-400 mt-0.5">
+                          {ob.paidOn}
+                          {ob.notes && <span className="italic"> · {ob.notes}</span>}
+                        </p>
+                      </div>
+                      <div className="text-right flex-shrink-0">
+                        <p className={cn("text-sm font-bold",
+                          isNotCollected ? "text-slate-400" : ob.status === "partial" ? "text-accent-amber" : "text-accent-green")}>
+                          {isNotCollected ? "Not collected" : formatCurrency(ob.amountCollected)}
+                        </p>
+                        <p className="text-[10px] text-slate-400 uppercase tracking-wide">Onboarding</p>
+                      </div>
+                    </div>
+                    {onboardPromises.length > 0 && (
+                      <div className="mt-2 pt-2 border-t border-amber-200 space-y-1 pl-5">
+                        <p className="text-[10px] font-semibold text-amber-700 uppercase tracking-wide">Promised Payments</p>
+                        {onboardPromises.map((p) => (
+                          <div key={p.id} className="flex items-center justify-between px-2 py-1 bg-white border border-amber-200 rounded-lg">
+                            <span className="text-[11px] text-amber-700">
+                              {new Date(p.promisedDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                              {p.notes && <span className="italic text-amber-500"> · {p.notes}</span>}
+                            </span>
+                            <span className="text-xs font-semibold text-accent-amber">{formatCurrency(p.remainingAmount)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
+              {/* Renewal payment entries */}
               {allPaymentLog.map((p: any, i: number) => (
                 <div key={p.id ?? i} className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-colors">
                   <div className="w-1.5 h-8 rounded-full bg-accent flex-shrink-0" />
