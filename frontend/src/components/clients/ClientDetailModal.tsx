@@ -150,14 +150,27 @@ function InlinePaymentForm({ contractId, clientName, renewalYear, renewalMonth, 
   const effectiveOutstanding = effectiveFullAmount - paidSoFar;
   const remaining            = effectiveOutstanding - entered;
   function updatePromiseRow(idx: number, field: keyof PromiseRow, value: string) {
-    setPromiseRows((prev) => prev.map((row, i) => i === idx ? { ...row, [field]: value } : row));
+    setPromiseRows((prev) => {
+      if (field !== "amount") {
+        return prev.map((row, i) => i === idx ? { ...row, [field]: value } : row);
+      }
+      // Cap this row's amount so total promised never exceeds `remaining`
+      // (the outstanding balance after the entered payment amount).
+      const otherRowsTotal = prev.reduce((sum, row, i) => i === idx ? sum : sum + (Number(row.amount) || 0), 0);
+      const maxAllowed = Math.max(remaining - otherRowsTotal, 0);
+      const entered = Number(value) || 0;
+      const clamped = value === "" ? "" : String(Math.min(entered, maxAllowed));
+      return prev.map((row, i) => i === idx ? { ...row, amount: clamped } : row);
+    });
   }
   const promisedTotal  = promiseRows.reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
   const promiseSumDiff = remaining > 0 ? promisedTotal - remaining : 0;
   const hasAnyPromise  = promiseRows.some((r) => r.date || r.amount);
 
   async function handleSave() {
-    if (!entered || entered <= 0) return;
+    if (paymentType === "partial" && entered < 0) return;
+    if (paymentType === "full" && (!entered || entered <= 0)) return;
+    if (paymentType === "partial" && promiseSumDiff > 0) return;
     setLoading(true);
     await new Promise((r) => setTimeout(r, 500));
     const isFull = paymentType === "full";
@@ -314,8 +327,8 @@ function InlinePaymentForm({ contractId, clientName, renewalYear, renewalMonth, 
                       <span className="text-amber-500">of</span>
                       <span className="text-amber-700">Outstanding: <span className="font-semibold">{formatCurrency(remaining)}</span></span>
                       {promiseSumDiff!==0 && (
-                        <span className={cn("font-semibold",promiseSumDiff>0?"text-accent-green":"text-accent-red")}>
-                          {promiseSumDiff>0?`+${formatCurrency(promiseSumDiff)} over`:`${formatCurrency(Math.abs(promiseSumDiff))} short`}
+                        <span className={cn("font-semibold",promiseSumDiff>0?"text-accent-red":"text-slate-500")}>
+                          {promiseSumDiff>0?`⚠ ${formatCurrency(promiseSumDiff)} over — reduce before saving`:`${formatCurrency(Math.abs(promiseSumDiff))} short`}
                         </span>
                       )}
                       {promiseSumDiff===0 && <span className="text-accent-green font-semibold flex items-center gap-1"><CheckCircle2 className="w-3 h-3"/>Balanced</span>}
@@ -334,7 +347,7 @@ function InlinePaymentForm({ contractId, clientName, renewalYear, renewalMonth, 
       )}
       <div className="flex items-center justify-end gap-2 pt-1 border-t border-slate-100">
         <Button variant="ghost" size="sm" onClick={onCancel}>Cancel</Button>
-        <Button size="sm" onClick={handleSave} loading={loading} disabled={paymentType==="partial"&&(!entered||entered<=0)}>
+        <Button size="sm" onClick={handleSave} loading={loading} disabled={paymentType==="partial"&&(entered<0||promiseSumDiff>0)}>
           <CheckCircle2 className="w-3.5 h-3.5"/>
           {paymentType==="full"?"Mark as Collected":"Save Partial Payment"}
         </Button>

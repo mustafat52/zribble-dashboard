@@ -160,7 +160,18 @@ export default function NewEntryPage() {
   const [promiseRows, setPromiseRows] = useState<PromiseRow[]>([{ date: "", amount: "", notes: "" }]);
 
   function updatePromiseRow(idx: number, field: keyof PromiseRow, value: string) {
-    setPromiseRows((prev) => prev.map((row, i) => i === idx ? { ...row, [field]: value } : row));
+    setPromiseRows((prev) => {
+      if (field !== "amount") {
+        return prev.map((row, i) => i === idx ? { ...row, [field]: value } : row);
+      }
+      // Cap this row's amount so total promised never exceeds `remaining`
+      // (the outstanding balance after the entered payment amount).
+      const otherRowsTotal = prev.reduce((sum, row, i) => i === idx ? sum : sum + (Number(row.amount) || 0), 0);
+      const maxAllowed = Math.max(remainingAmount - otherRowsTotal, 0);
+      const entered = Number(value) || 0;
+      const clamped = value === "" ? "" : String(Math.min(entered, maxAllowed));
+      return prev.map((row, i) => i === idx ? { ...row, amount: clamped } : row);
+    });
   }
 
   const { addOnboardingPayment, addNote: addClientNote, addPromise } = useClient();
@@ -188,7 +199,9 @@ export default function NewEntryPage() {
   // Derived onboarding values
   const paidAmount      = Number(onboardingAmount) || 0;
   const remainingAmount = form.dealValue > 0 ? Math.max(form.dealValue - paidAmount, 0) : 0;
-  const isPartial       = onboardingStatus === "partial" && paidAmount > 0 && remainingAmount > 0;
+  const isPartial        = onboardingStatus === "partial" && remainingAmount > 0;
+  const promisedTotal    = promiseRows.reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
+  const promiseOverBy    = promisedTotal - remainingAmount;
 
   function update<K extends keyof NewContractForm>(key: K, value: NewContractForm[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -206,6 +219,10 @@ export default function NewEntryPage() {
   async function handleSubmit() {
     const errs = validate(form, 4);
     if (Object.keys(errs).length) { setErrors(errs); return; }
+    if (isPartial && promiseOverBy > 0) {
+      setErrors({ submit: `Promised amounts (${formatCurrency(promisedTotal)}) exceed the outstanding balance (${formatCurrency(remainingAmount)}).` });
+      return;
+    }
     setLoading(true);
 
     try {
@@ -625,7 +642,7 @@ export default function NewEntryPage() {
                           <Input
                             label={onboardingStatus === "partial" ? "Amount Received (₹) *" : "Amount Collected (₹) *"}
                             type="number"
-                            min={1}
+                            min={0}
                             placeholder={form.dealValue > 0 ? `Deal value: ${formatCurrency(form.dealValue)}` : "Enter amount"}
                             value={onboardingAmount}
                             onChange={(e) => setOnboardingAmount(e.target.value)}
@@ -751,6 +768,11 @@ export default function NewEntryPage() {
                               ⚠ No promise date set — the remaining amount won&apos;t show on the calendar
                             </p>
                           )}
+                          {promiseOverBy > 0 && (
+                            <p className="text-xs text-accent-red font-medium">
+                              ⚠ Promised total ({formatCurrency(promisedTotal)}) exceeds the outstanding balance ({formatCurrency(remainingAmount)}) by {formatCurrency(promiseOverBy)}. Reduce a promise amount before continuing.
+                            </p>
+                          )}
                         </div>
                       )}
                     </div>
@@ -851,7 +873,7 @@ export default function NewEntryPage() {
                         Continue <ChevronRight className="w-3.5 h-3.5" />
                       </Button>
                     ) : (
-                      <Button variant="primary" onClick={handleSubmit} loading={loading}>
+                      <Button variant="primary" onClick={handleSubmit} loading={loading} disabled={isPartial && promiseOverBy > 0}>
                         <CheckCircle2 className="w-3.5 h-3.5" />
                         Create Contract
                       </Button>
