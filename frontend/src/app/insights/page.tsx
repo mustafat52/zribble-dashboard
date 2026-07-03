@@ -1,7 +1,7 @@
 "use client";
 import { useState, useMemo } from "react";
 import { PageWrapper } from "@/components/layout/PageWrapper";
-import { useContracts } from "@/lib/api";
+import { useContracts, useServices } from "@/lib/api";
 import { MONTH_COLS, parseMonthCol } from "@/lib/utils";
 import { formatCurrency, SALESPERSON_COLORS } from "@/lib/utils";
 import { ClientLink } from "@/components/clients/ClientLink";
@@ -19,15 +19,23 @@ import {
 } from "recharts";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-// ALL_SALESPERSONS and ALL_AMS used to be hardcoded lists here. Both are now
-// derived live from loaded contract data inside the component (see useMemo
-// below) — this way a new exec or AM hire automatically appears in these
-// filters as soon as they have contracts assigned, with no code change needed.
-const ALL_PRODUCTS = [
-  "DM Single","GMB Single","SMM Single",
-  "DM + GMB","DM + SMM","GMB + SMM","GMB + SEO",
-  "DM + GMB + SMM","GMB + SMM + SEO","DM + GMB + SMM + SEO",
-];
+// ALL_SALESPERSONS and ALL_AMS are derived live from loaded contract data
+// inside the component (see useMemo below) — this way a new exec or AM hire
+// automatically appears in these filters as soon as they have contracts
+// assigned, with no code change needed.
+//
+// ALL_SERVICE_TOKENS is derived live inside the component too — merging
+// active atomic services (from the Service table, managed in Settings) with
+// any atomic token found on a real contract's product field. The company
+// only offers 4 atomic services (DM/GMB/SMM/SEO); a client with multiple
+// services has one contract row per service. Some historical rows still
+// carry legacy combo strings (e.g. "GMB + SMM + SEO") from before this
+// model — tokenizeProduct() splits on " + " so both shapes (atomic rows
+// going forward, legacy combo rows in the past) resolve to the same atomic
+// tokens for filtering purposes, with no data migration needed.
+function tokenizeProduct(product: string): string[] {
+  return product.split("+").map((s) => s.trim()).filter(Boolean);
+}
 const PRODUCT_COLORS = [
   "#4F46E5","#0891B2","#7C3AED","#059669","#D97706","#DC2626",
   "#8B5CF6","#0D9488","#F59E0B","#EF4444",
@@ -68,6 +76,7 @@ function AccentToggle({ label, active, onClick }: { label: string; active: boole
 export default function InsightsPage() {
   const { user, canPerform } = useAuth();
   const { data: allContracts = [], isLoading } = useContracts();
+  const { data: services = [] } = useServices();
 
   // ── Role-awareness ────────────────────────────────────────────────────────
   // For employees: pre-lock the salesperson filter to their own name.
@@ -91,8 +100,16 @@ export default function InsightsPage() {
     [allContracts]
   );
 
+  const ALL_SERVICE_TOKENS = useMemo(() => {
+    const activeNames = services.filter((s) => s.isActive).map((s) => s.name);
+    const contractTokens = allContracts.flatMap((c) => tokenizeProduct(c.product));
+    const allTokens = Array.from(new Set([...activeNames, ...contractTokens]));
+    return allTokens.sort();
+  }, [services, allContracts]);
+
   const [selExecs,    setSelExecs]    = useState<string[]>(lockedSalesperson ? [lockedSalesperson] : []);
-  const [selProducts, setSelProducts] = useState<string[]>([]);
+  const [selServices, setSelServices] = useState<string[]>([]);
+  const [matchMode,   setMatchMode]   = useState<"AND" | "OR">("AND");
   const [selAMs,      setSelAMs]      = useState<string[]>(lockedAM ? [lockedAM] : []);
   const [selGST,      setSelGST]      = useState<"all"|"Y"|"N">("all");
   const [multiOnly,   setMultiOnly]   = useState(false);
@@ -110,14 +127,51 @@ export default function InsightsPage() {
   }
 
   // ── Filtered contracts ────────────────────────────────────────────────────
-  const filtered = useMemo(() =>
+  // Service matching happens at the CLIENT level, not the contract level —
+  // a client's full service set is the union of atomic tokens across all of
+  // their (non-service-filtered) contract rows. This is what lets "DM + GMB"
+  // work correctly even though a client with both services is two separate
+  // Contract rows, not one combined record.
+  //
+  // Step 1: apply the non-service filters (exec/AM/GST) at the contract level.
+  const preFiltered = useMemo(() =>
     allContracts.filter((c) => {
-      if (selExecs.length    && !selExecs.includes(c.salesperson))   return false;
-      if (selProducts.length && !selProducts.includes(c.product))    return false;
-      if (selAMs.length      && !selAMs.includes(c.accountManager))  return false;
-      if (selGST !== "all"   && c.gstStatus !== selGST)             return false;
+      if (selExecs.length  && !selExecs.includes(c.salesperson))   return false;
+      if (selAMs.length    && !selAMs.includes(c.accountManager))  return false;
+      if (selGST !== "all" && c.gstStatus !== selGST)              return false;
       return true;
-    }), [allContracts, selExecs, selProducts, selAMs, selGST]);
+    }), [allContracts, selExecs, selAMs, selGST]);
+
+  // Step 2: group the pre-filtered contracts by client.
+  const preClientMap = useMemo(() => {
+    const map: Record<string, typeof preFiltered> = {};
+    preFiltered.forEach((c) => { if (!map[c.clientName]) map[c.clientName] = []; map[c.clientName].push(c); });
+    return map;
+  }, [preFiltered]);
+
+  // Step 3: decide which clients qualify under the selected services + match mode.
+  //   AND ("has all selected")     → client's service set is a superset of selServices (S ⊆ C)
+  //   OR  ("has only one of")      → client's service set overlaps with EXACTLY ONE of selServices (|S ∩ C| = 1)
+  //   No services selected         → every client qualifies
+  const qualifyingClientNames = useMemo(() => {
+    if (selServices.length === 0) return new Set(Object.keys(preClientMap));
+    const names = new Set<string>();
+    for (const [name, cs] of Object.entries(preClientMap)) {
+      const serviceSet = new Set(cs.flatMap((c) => tokenizeProduct(c.product)));
+      if (matchMode === "AND") {
+        if (selServices.every((s) => serviceSet.has(s))) names.add(name);
+      } else {
+        const overlap = selServices.filter((s) => serviceSet.has(s)).length;
+        if (overlap === 1) names.add(name);
+      }
+    }
+    return names;
+  }, [preClientMap, selServices, matchMode]);
+
+  // Step 4: final contract list = pre-filtered contracts belonging to a qualifying client.
+  const filtered = useMemo(() =>
+    preFiltered.filter((c) => qualifyingClientNames.has(c.clientName)),
+    [preFiltered, qualifyingClientNames]);
 
   const clientMap = useMemo(() => {
     const map: Record<string, typeof filtered> = {};
@@ -127,6 +181,7 @@ export default function InsightsPage() {
 
   const visibleClients = useMemo(() =>
     Object.entries(clientMap).filter(([, cs]) => !multiOnly || cs.length > 1),
+
     [clientMap, multiOnly]);
 
   const filteredWithMonthRange = useMemo(() =>
@@ -185,7 +240,7 @@ export default function InsightsPage() {
   const totalClients   = Object.keys(clientMap).length;
   const multiCount     = multiServiceClients.length;
 
-  const activeFilterCount = (isEmployee ? 0 : selExecs.length) + selProducts.length + (isAM ? 0 : selAMs.length)
+  const activeFilterCount = (isEmployee ? 0 : selExecs.length) + selServices.length + (isAM ? 0 : selAMs.length)
     + (selGST !== "all" ? 1 : 0)
     + (multiOnly ? 1 : 0)
     + (fromCol !== MONTH_COLS[0] || toCol !== MONTH_COLS[MONTH_COLS.length-1] ? 1 : 0);
@@ -193,7 +248,8 @@ export default function InsightsPage() {
   function clearAll() {
     setSelExecs(lockedSalesperson ? [lockedSalesperson] : []);
     setSelAMs(lockedAM ? [lockedAM] : []);
-    setSelProducts([]);
+    setSelServices([]);
+    setMatchMode("AND");
     setSelGST("all"); setMultiOnly(false);
     setFromCol(MONTH_COLS[0]); setToCol(MONTH_COLS[MONTH_COLS.length-1]);
   }
@@ -360,10 +416,28 @@ export default function InsightsPage() {
             )}
           </div>
           <div>
-            <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-2">Service / Product</p>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Service</p>
+              {selServices.length > 1 && (
+                <div className="flex items-center gap-1">
+                  <button onClick={() => setMatchMode("AND")} className={cn(
+                    "px-2 py-0.5 rounded-md text-[10px] font-semibold border transition-all",
+                    matchMode === "AND" ? "bg-accent text-white border-accent" : "bg-white text-slate-500 border-slate-200 hover:border-slate-300"
+                  )}>
+                    Has all selected
+                  </button>
+                  <button onClick={() => setMatchMode("OR")} className={cn(
+                    "px-2 py-0.5 rounded-md text-[10px] font-semibold border transition-all",
+                    matchMode === "OR" ? "bg-accent text-white border-accent" : "bg-white text-slate-500 border-slate-200 hover:border-slate-300"
+                  )}>
+                    Has only one of selected
+                  </button>
+                </div>
+              )}
+            </div>
             <div className="flex flex-wrap gap-1.5">
-              {ALL_PRODUCTS.map((p, i) => (
-                <Toggle key={p} label={p} active={selProducts.includes(p)} color={PRODUCT_COLORS[i % PRODUCT_COLORS.length]} onClick={() => setSelProducts((v) => toggle(v, p))} />
+              {ALL_SERVICE_TOKENS.map((s, i) => (
+                <Toggle key={s} label={s} active={selServices.includes(s)} color={PRODUCT_COLORS[i % PRODUCT_COLORS.length]} onClick={() => setSelServices((v) => toggle(v, s))} />
               ))}
             </div>
           </div>

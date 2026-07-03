@@ -10,7 +10,7 @@ import { formatCurrency, getMonthShort, SALESPERSON_COLORS } from "@/lib/utils";
 import { NewContractForm, GSTStatus } from "@/types";
 import { useClient } from "@/lib/client-context";
 import { useAuth } from "@/lib/auth-context";
-import { useCreateContract, useAccountManagers, useSalespersons } from "@/lib/api";
+import { useCreateContract, useAccountManagers, useSalespersons, useServices } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { useSearchParams } from "next/navigation";
 import {
@@ -24,19 +24,18 @@ import {
 // dynamically from real User records via useSalespersons()/useAccountManagers()
 // (same treatment already applied in settings/page.tsx) — a new hire is
 // available immediately, with no code change needed.
-
-const PRODUCT_OPTS = [
-  { value: "DM Single",            label: "DM Single"            },
-  { value: "GMB Single",           label: "GMB Single"           },
-  { value: "SMM Single",           label: "SMM Single"           },
-  { value: "DM + GMB",             label: "DM + GMB"             },
-  { value: "DM + SMM",             label: "DM + SMM"             },
-  { value: "GMB + SMM",            label: "GMB + SMM"            },
-  { value: "GMB + SEO",            label: "GMB + SEO"            },
-  { value: "DM + GMB + SMM",       label: "DM + GMB + SMM"       },
-  { value: "GMB + SMM + SEO",      label: "GMB + SMM + SEO"      },
-  { value: "DM + GMB + SMM + SEO", label: "DM + GMB + SMM + SEO" },
-];
+//
+// PRODUCT_OPTS used to be hardcoded here too. It's now sourced live from the
+// Service table via useServices() (see `activeServices` inside the component)
+// — only ACTIVE services appear here, so a retired service can no longer be
+// selected for a new contract, while still remaining filterable in Insights.
+//
+// The company offers 4 atomic services (DM, GMB, SMM, SEO) — this dropdown
+// is single-select on purpose. A client wanting multiple services gets one
+// contract row per service: submit New Entry again with the same client
+// name and a different service to add another one (this already works today
+// since clientName is not unique per contract — see e.g. existing multi-row
+// clients like "Dermologie" in the seed data).
 
 const TERM_OPTS = [
   ...[1,2,3,4,5,6,7,8,9,10,11,12,14,15,18,24].map((n) => ({
@@ -83,7 +82,7 @@ function getDefaultForm(salesperson: string): NewContractForm {
   return {
     salesperson:        salesperson as NewContractForm["salesperson"],
     clientName:         "",
-    product:            "DM Single",
+    product:            "DM",
     accountManager:     "Gaurav",
     contractId:         "",
     profiles:           1,
@@ -169,6 +168,16 @@ export default function NewEntryPage() {
   const createContractMutation = useCreateContract();
   const { data: amUsers = [] }          = useAccountManagers();
   const { data: salespersonUsers = [] } = useSalespersons();
+
+  // Product / Service options — sourced live from the Service table.
+  // Only ACTIVE services are offered here; a retired service can no longer
+  // be selected for a new contract (it remains selectable/filterable in
+  // Insights, where historical contracts still using it need to stay visible).
+  const { data: services = [] } = useServices();
+  const activeServices = useMemo(
+    () => services.filter((s) => s.isActive).map((s) => ({ value: s.name, label: s.name })),
+    [services]
+  );
 
   const renewalPreview = useMemo(
     () => calcRenewalSchedule(form.firstRenewalDate, form.dealValue, form.contractTermMonths),
@@ -443,7 +452,7 @@ export default function NewEntryPage() {
                   <>
                     <Select
                       label="Product / Service *"
-                      options={PRODUCT_OPTS}
+                      options={activeServices.length > 0 ? activeServices : [{ value: "", label: "Loading services..." }]}
                       value={form.product}
                       onChange={(e) => update("product", e.target.value)}
                       error={errors.product}

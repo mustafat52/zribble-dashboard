@@ -6,9 +6,10 @@ import { useAuth, AppUser, UserRole, EmployeeMode } from "@/lib/auth-context";
 import { PageWrapper } from "@/components/layout/PageWrapper";
 import { SALESPERSON_COLORS } from "@/lib/utils";
 import { cn } from "@/lib/utils";
+import { useServices, useCreateService, useUpdateService, Service } from "@/lib/api";
 import {
   Shield, Users, CheckCircle2, LogOut, Settings as SettingsIcon,
-  Plus, Pencil, Trash2, X, Eye, EyeOff,
+  Plus, Pencil, Trash2, X, Eye, EyeOff, Package, ToggleLeft, ToggleRight, AlertTriangle,
 } from "lucide-react";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "";
@@ -276,6 +277,32 @@ export default function SettingsPage() {
   const [deleteTarget,  setDeleteTarget]  = useState<AppUser | null>(null);
   const [formError,     setFormError]     = useState("");
 
+  // ── Services management state ─────────────────────────────────────────────
+  const { data: services = [], isLoading: servicesLoading } = useServices();
+  const createService = useCreateService();
+  const updateService = useUpdateService();
+
+  const [addingService,  setAddingService]  = useState(false);
+  const [newServiceName, setNewServiceName] = useState("");
+  const [serviceError,   setServiceError]   = useState("");
+
+  function handleAddService() {
+    if (!newServiceName.trim()) return;
+    setServiceError("");
+    createService.mutate(newServiceName.trim(), {
+      onSuccess: () => { setAddingService(false); setNewServiceName(""); },
+      onError: (err: any) => setServiceError(err.message ?? "Failed to add service"),
+    });
+  }
+
+  function handleToggleService(service: Service) {
+    setServiceError("");
+    updateService.mutate(
+      { id: service.id, data: { isActive: !service.isActive } },
+      { onError: (err: any) => setServiceError(err.message ?? "Failed to update service") }
+    );
+  }
+
   if (!canPerform("view_settings")) {
     return (
       <PageWrapper>
@@ -503,6 +530,129 @@ export default function SettingsPage() {
             <p className="text-[11px] text-slate-400">
               User management connected to live backend — full CRUD enabled.
             </p>
+          </div>
+        </div>
+
+        {/* Services Management */}
+        <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-card">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+            <div className="flex items-center gap-2">
+              <Package className="w-4 h-4 text-slate-500" />
+              <p className="text-sm font-semibold text-slate-700">Services / Products</p>
+              {!servicesLoading && (
+                <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded-full bg-accent-light text-accent border border-accent-border">
+                  {services.filter((s) => s.isActive).length} active
+                </span>
+              )}
+            </div>
+            {!addingService && (
+              <button
+                onClick={() => { setAddingService(true); setServiceError(""); setNewServiceName(""); }}
+                className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-accent text-white hover:bg-accent-hover transition-all shadow-sm">
+                <Plus className="w-3.5 h-3.5" /> Add Service
+              </button>
+            )}
+          </div>
+
+          {/* Add service form */}
+          {addingService && (
+            <div className="px-5 py-4 border-b border-slate-100 space-y-3">
+              <p className="text-xs font-semibold text-accent uppercase tracking-wide">Add New Service</p>
+              <div className="flex gap-2">
+                <input
+                  value={newServiceName}
+                  onChange={(e) => setNewServiceName(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleAddService()}
+                  placeholder="e.g. PPC — one atomic service, not a combo like 'DM + GMB'"
+                  autoFocus
+                  className="flex-1 px-3 py-2 h-9 text-sm bg-white border border-slate-200 rounded-lg focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/20 text-slate-700 placeholder:text-slate-400"
+                />
+                <button
+                  onClick={handleAddService}
+                  disabled={createService.isPending || !newServiceName.trim()}
+                  className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-accent text-white hover:bg-accent-hover transition-all disabled:opacity-50">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  {createService.isPending ? "Adding..." : "Add"}
+                </button>
+                <button
+                  onClick={() => { setAddingService(false); setNewServiceName(""); setServiceError(""); }}
+                  className="p-2 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-all">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              {serviceError && (
+                <p className="text-xs text-accent-red bg-red-50 border border-red-200 rounded-lg px-3 py-2">{serviceError}</p>
+              )}
+            </div>
+          )}
+
+          {/* Service list */}
+          <div className="divide-y divide-slate-100">
+            {servicesLoading ? (
+              <div className="px-5 py-8 text-center text-sm text-slate-400">Loading services...</div>
+            ) : services.length === 0 ? (
+              <div className="px-5 py-8 text-center text-sm text-slate-400">No services yet — add one above.</div>
+            ) : (
+              <>
+                {/* Active services */}
+                {services.filter((s) => s.isActive).map((service) => (
+                  <div key={service.id} className="flex items-center gap-4 px-5 py-3.5">
+                    <div className="w-8 h-8 rounded-lg bg-accent-light flex items-center justify-center flex-shrink-0">
+                      <Package className="w-4 h-4 text-accent" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-slate-700">{service.name}</p>
+                      <p className="text-[11px] text-slate-400">Active — appears in New Entry and Insights</p>
+                    </div>
+                    <button
+                      onClick={() => handleToggleService(service)}
+                      disabled={updateService.isPending}
+                      title="Retire this service (hides it from dropdowns)"
+                      className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-accent-red hover:bg-accent-redLight px-2.5 py-1.5 rounded-lg transition-all border border-transparent hover:border-red-200 disabled:opacity-40">
+                      <ToggleRight className="w-4 h-4" />
+                      Retire
+                    </button>
+                  </div>
+                ))}
+
+                {/* Retired services — shown separately with greyed style */}
+                {services.filter((s) => !s.isActive).length > 0 && (
+                  <>
+                    <div className="px-5 py-2 bg-slate-50">
+                      <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Retired (hidden from dropdowns)</p>
+                    </div>
+                    {services.filter((s) => !s.isActive).map((service) => (
+                      <div key={service.id} className="flex items-center gap-4 px-5 py-3.5 opacity-60">
+                        <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center flex-shrink-0">
+                          <Package className="w-4 h-4 text-slate-400" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-slate-500 line-through">{service.name}</p>
+                          <p className="text-[11px] text-slate-400">Retired — hidden from New Entry and Insights</p>
+                        </div>
+                        <button
+                          onClick={() => handleToggleService(service)}
+                          disabled={updateService.isPending}
+                          title="Reactivate this service"
+                          className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-accent-green hover:bg-accent-greenLight px-2.5 py-1.5 rounded-lg transition-all border border-transparent hover:border-emerald-200 disabled:opacity-40">
+                          <ToggleLeft className="w-4 h-4" />
+                          Reactivate
+                        </button>
+                      </div>
+                    ))}
+                  </>
+                )}
+              </>
+            )}
+          </div>
+
+          <div className="px-5 py-3 bg-slate-50 border-t border-slate-100">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="w-3 h-3 text-amber-500 mt-0.5 flex-shrink-0" />
+              <p className="text-[11px] text-slate-400">
+                Retiring a service hides it from New Entry and Insights filters. Existing contracts using it are not affected. You can reactivate at any time.
+              </p>
+            </div>
           </div>
         </div>
 

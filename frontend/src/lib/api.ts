@@ -280,3 +280,42 @@ export function useDeletePromise() {
     },
   });
 }
+
+// ─── Services ─────────────────────────────────────────────────────────────────
+// Managed reference list of allowed service/product names (Settings > Services).
+// New Entry sources its product dropdown from useServices() (active only);
+// Insights merges active services with product names found on real contracts
+// so historical data stays filterable even after a service is retired.
+export interface Service {
+  id: string;
+  name: string;
+  isActive: boolean;
+  createdAt: string;
+  createdBy: string;
+}
+
+export function useServices() {
+  return useQuery<Service[]>({
+    queryKey: ["services"],
+    queryFn: () => apiFetch<Service[]>("/services"),
+    staleTime: 5 * 60_000,  // services change rarely — 5 min stale time is fine
+  });
+}
+
+export function useCreateService() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (name: string) =>
+      apiFetch<Service>("/services", { method: "POST", body: JSON.stringify({ name }) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["services"] }),
+  });
+}
+
+export function useUpdateService() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: { name?: string; isActive?: boolean } }) =>
+      apiFetch<Service>(`/services/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["services"] }),
+  });
+}

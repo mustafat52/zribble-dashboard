@@ -12,6 +12,7 @@ import onboardingRoutes from "./routes/onboarding";
 import overrideRoutes from "./routes/overrides";
 import dashboardRoutes from "./routes/dashboard";
 import userRoutes from "./routes/users";
+import serviceRoutes from "./routes/services";
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -45,6 +46,7 @@ app.use("/onboarding", onboardingRoutes);
 app.use("/price-overrides", overrideRoutes);
 app.use("/dashboard", dashboardRoutes);
 app.use("/users", userRoutes);
+app.use("/services", serviceRoutes);
 
 // ── Global error handler ──────────────────────────────────────────────────────
 app.use(

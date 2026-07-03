@@ -160,3 +160,17 @@ model ContractEdit {
   editedBy       String
   contract       Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
 }
+
+// ── Services ──────────────────────────────────────────────────────────────────
+// Managed reference list of allowed service/product names, editable by Super
+// Admins from Settings. No relation to Contract — Contract.product stays a
+// plain String and is matched against Service.name purely by string value,
+// never by FK. Services are retired (isActive: false), never hard-deleted,
+// so historical contracts referencing a retired name are unaffected.
+model Service {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  createdBy String
+}
