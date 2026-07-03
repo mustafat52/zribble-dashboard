@@ -424,13 +424,13 @@ export default function InsightsPage() {
                     "px-2 py-0.5 rounded-md text-[10px] font-semibold border transition-all",
                     matchMode === "AND" ? "bg-accent text-white border-accent" : "bg-white text-slate-500 border-slate-200 hover:border-slate-300"
                   )}>
-                    Has all selected
+                    AND
                   </button>
                   <button onClick={() => setMatchMode("OR")} className={cn(
                     "px-2 py-0.5 rounded-md text-[10px] font-semibold border transition-all",
                     matchMode === "OR" ? "bg-accent text-white border-accent" : "bg-white text-slate-500 border-slate-200 hover:border-slate-300"
                   )}>
-                    Has only one of selected
+                    OR
                   </button>
                 </div>
               )}
