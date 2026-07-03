@@ -150,19 +150,25 @@ export default function InsightsPage() {
   }, [preFiltered]);
 
   // Step 3: decide which clients qualify under the selected services + match mode.
-  //   AND ("has all selected")     → client's service set is a superset of selServices (S ⊆ C)
-  //   OR  ("has only one of")      → client's service set overlaps with EXACTLY ONE of selServices (|S ∩ C| = 1)
-  //   No services selected         → every client qualifies
+  //   AND ("exactly these services")  → client's service set EQUALS selServices exactly (S == C, no extras)
+  //   OR  ("only one of these")       → client's ENTIRE service set is a single service,
+  //                                     and that one service is among selServices (no extras of any kind)
+  //   No services selected            → every client qualifies
   const qualifyingClientNames = useMemo(() => {
     if (selServices.length === 0) return new Set(Object.keys(preClientMap));
     const names = new Set<string>();
     for (const [name, cs] of Object.entries(preClientMap)) {
       const serviceSet = new Set(cs.flatMap((c) => tokenizeProduct(c.product)));
       if (matchMode === "AND") {
-        if (selServices.every((s) => serviceSet.has(s))) names.add(name);
+        const isExactMatch =
+          selServices.length === serviceSet.size &&
+          selServices.every((s) => serviceSet.has(s));
+        if (isExactMatch) names.add(name);
       } else {
-        const overlap = selServices.filter((s) => serviceSet.has(s)).length;
-        if (overlap === 1) names.add(name);
+        const isSingleSelectedService =
+          serviceSet.size === 1 &&
+          selServices.some((s) => serviceSet.has(s));
+        if (isSingleSelectedService) names.add(name);
       }
     }
     return names;
