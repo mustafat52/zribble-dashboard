@@ -421,24 +421,13 @@ export default function NewEntryPage() {
                       error={errors.salesperson}
                       disabled={user?.role === "employee"}
                     />
-                    <div className="flex flex-col gap-1.5">
-                      <label className="text-xs font-medium text-slate-600 uppercase tracking-wide">
-                        Account Manager *
-                      </label>
-                      <input
-                        list="am-new-entry-suggestions"
-                        value={form.accountManager}
-                        onChange={(e) => update("accountManager", e.target.value)}
-                        placeholder="Type or select an account manager"
-                        className="w-full px-3 py-2 h-9 text-sm bg-white border border-slate-200 rounded-lg focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/10 text-slate-700 placeholder:text-slate-400"
-                      />
-                      <datalist id="am-new-entry-suggestions">
-                        {amUsers.map((am) => <option key={am} value={am} />)}
-                      </datalist>
-                      {errors.accountManager && (
-                        <p className="text-xs text-accent-red">{errors.accountManager}</p>
-                      )}
-                    </div>
+                    <Select
+                      label="Account Manager *"
+                      options={amUsers.map((am) => ({ value: am, label: am }))}
+                      value={form.accountManager}
+                      onChange={(e) => update("accountManager", e.target.value)}
+                      error={errors.accountManager}
+                    />
                     <Input
                       label="Contract ID (optional)"
                       placeholder="e.g. 14700"
