@@ -1,7 +1,7 @@
 "use client";
 import { useState, useMemo } from "react";
 import { PageWrapper } from "@/components/layout/PageWrapper";
-import { useContracts, useServices } from "@/lib/api";
+import { useActiveContracts, useServices } from "@/lib/api";
 import { MONTH_COLS, parseMonthCol } from "@/lib/utils";
 import { formatCurrency, SALESPERSON_COLORS } from "@/lib/utils";
 import { ClientLink } from "@/components/clients/ClientLink";
@@ -75,7 +75,7 @@ function AccentToggle({ label, active, onClick }: { label: string; active: boole
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function InsightsPage() {
   const { user, canPerform } = useAuth();
-  const { data: allContracts = [], isLoading } = useContracts();
+  const { data: allContracts = [], isLoading } = useActiveContracts();
   const { data: services = [] } = useServices();
 
   // ── Role-awareness ────────────────────────────────────────────────────────

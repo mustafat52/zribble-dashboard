@@ -1,6 +1,6 @@
 "use client";
 import { useMemo, useState } from "react";
-import { useContracts } from "@/lib/api";
+import { useActiveContracts } from "@/lib/api";
 import { formatCurrency, SALESPERSON_COLORS, getMonthShort } from "@/lib/utils";
 import { StatusBadge } from "@/components/ui/Badge";
 import { cn } from "@/lib/utils";
@@ -102,7 +102,7 @@ interface RenewalCalendarProps {
 
 export function RenewalCalendar({ year, month, promises, salesperson }: RenewalCalendarProps) {
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
-  const { data: allContracts = [] } = useContracts();
+  const { data: allContracts = [] } = useActiveContracts();
 
   const contracts = salesperson
     ? allContracts.filter((c) => c.salesperson === salesperson)

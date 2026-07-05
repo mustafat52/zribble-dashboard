@@ -52,6 +52,11 @@ export function useContracts() {
   });
 }
 
+export function useActiveContracts() {
+  const { data = [], ...rest } = useContracts();
+  return { data: data.filter((c) => c.contractStatus === "active"), ...rest };
+}
+
 export function useCreateContract() {
   const qc = useQueryClient();
   return useMutation({

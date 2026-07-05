@@ -1,6 +1,6 @@
 "use client";
 import { useState, useMemo } from "react";
-import { useContracts } from "@/lib/api";
+import { useActiveContracts } from "@/lib/api";
 import { formatCurrency, SALESPERSON_COLORS } from "@/lib/utils";
 import { Table, THead, Th, TBody, Tr, Td } from "@/components/ui/Table";
 import { StatusBadge } from "@/components/ui/Badge";
@@ -36,7 +36,7 @@ export function RenewalTable({ year, month, onMarkPayment, salesperson }: Renewa
   const [sortDir,      setSortDir]      = useState<SortDir>("desc");
 
   // Pull live data from API cache — replaces getRenewalsForMonth() from mock-data
-  const { data: contracts = [], isLoading } = useContracts();
+  const { data: contracts = [], isLoading } = useActiveContracts();
 
   const raw = useMemo(() => {
     return contracts.flatMap((c) => {

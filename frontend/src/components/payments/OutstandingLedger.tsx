@@ -1,6 +1,6 @@
 "use client";
 import { useMemo, useState } from "react";
-import { useContracts } from "@/lib/api";
+import { useActiveContracts } from "@/lib/api";
 import { formatCurrency, SALESPERSON_COLORS, getMonthShort } from "@/lib/utils";
 import { StatusBadge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
@@ -19,7 +19,7 @@ interface OutstandingItem {
 export function OutstandingLedger({ onMarkPayment }: { onMarkPayment: (id: string, y: number, m: number) => void }) {
   const { user, canPerform } = useAuth();
   const execFilter = canPerform("view_all") ? null : user?.salesperson ?? null;
-  const { data: allContracts = [], isLoading } = useContracts();
+  const { data: allContracts = [], isLoading } = useActiveContracts();
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
   const contracts = execFilter

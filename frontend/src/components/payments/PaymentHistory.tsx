@@ -1,6 +1,6 @@
 "use client";
 import { useState, useMemo } from "react";
-import { useContracts, useDeletePayment } from "@/lib/api";
+import { useActiveContracts, useDeletePayment } from "@/lib/api";
 import { formatCurrency, formatDate, SALESPERSON_COLORS, getMonthShort } from "@/lib/utils";
 import { StatusBadge } from "@/components/ui/Badge";
 import { Input } from "@/components/ui/Input";
@@ -19,7 +19,7 @@ const YEARS = ["All","2026","2027","2028"];
 export function PaymentHistory() {
   const { user, canPerform } = useAuth();
   const execFilter = canPerform("view_all") ? null : user?.salesperson ?? null;
-  const { data: allContracts = [], isLoading } = useContracts();
+  const { data: allContracts = [], isLoading } = useActiveContracts();
   const deletePaymentMutation = useDeletePayment();
 
   // canEdit permission gates the delete button

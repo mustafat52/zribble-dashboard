@@ -9,7 +9,7 @@ import { ExecContractTable } from "@/components/salesperson/ExecContractTable";
 import { ExecCrossBreakdown } from "@/components/salesperson/ExecCrossBreakdown";
 import { PaymentModal, PaymentPromise } from "@/components/renewals/PaymentModal";
 import { SALESPERSON_COLORS } from "@/lib/utils";
-import { useContracts } from "@/lib/api";
+import { useActiveContracts } from "@/lib/api";
 import { exportSalespersonExcel } from "@/lib/export";
 import { useAuth } from "@/lib/auth-context";
 import { useClient } from "@/lib/client-context";
@@ -64,7 +64,7 @@ export default function SalespersonContent() {
     setPaymentTarget({ contractId, year, month });
   }
 
-  const { data: allContracts = [] } = useContracts();
+  const { data: allContracts = [] } = useActiveContracts();
 
   async function handleExport() {
     setExporting(true);
