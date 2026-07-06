@@ -54,7 +54,8 @@ export function ClientList({ onSelectClient, stoppedClients, salespersonFilter }
       name.toLowerCase().includes(search.toLowerCase()) ||
       cs.some((c) =>
         c.accountManager.toLowerCase().includes(search.toLowerCase()) ||
-        c.salesperson.toLowerCase().includes(search.toLowerCase())
+        c.salesperson.toLowerCase().includes(search.toLowerCase()) ||
+        (c.contractId ?? "").toLowerCase().includes(search.toLowerCase())
       )
     );
     entries.sort(([nameA, csA], [nameB, csB]) => {
@@ -76,7 +77,7 @@ export function ClientList({ onSelectClient, stoppedClients, salespersonFilter }
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex-1 min-w-48 max-w-sm">
-          <Input placeholder="Search client, AM, executive…" value={search} onChange={(e) => setSearch(e.target.value)} leftIcon={<Search className="w-3.5 h-3.5"/>}/>
+          <Input placeholder="Search client, AM, executive, ID…" value={search} onChange={(e) => setSearch(e.target.value)} leftIcon={<Search className="w-3.5 h-3.5"/>}/>
         </div>
 
         {!salespersonFilter && (

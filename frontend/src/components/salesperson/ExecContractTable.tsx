@@ -1,6 +1,6 @@
 "use client";
 import { useState, useMemo } from "react";
-import { useContracts } from "@/lib/api";
+import { useActiveContracts } from "@/lib/api";
 import { formatCurrency, SALESPERSON_COLORS, getMonthShort } from "@/lib/utils";
 import { StatusBadge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -29,7 +29,7 @@ export function ExecContractTable({ exec, onMarkPayment, dimension = "exec" }: E
   const [expanded, setExpanded] = useState<string | null>(null);
   const [sortDir,  setSortDir]  = useState<"asc" | "desc">("desc");
 
-  const { data: allContracts = [], isLoading } = useContracts();
+  const { data: allContracts = [], isLoading } = useActiveContracts();
   const color = dimension === "am" ? AM_COLOR : (SALESPERSON_COLORS[exec] ?? "#3B82F6");
 
   // When scoped to an exec, the AM column is the useful cross-info (varies
@@ -56,7 +56,8 @@ export function ExecContractTable({ exec, onMarkPayment, dimension = "exec" }: E
       c.clientName.toLowerCase().includes(search.toLowerCase()) ||
       c.product.toLowerCase().includes(search.toLowerCase()) ||
       c.accountManager.toLowerCase().includes(search.toLowerCase()) ||
-      c.salesperson.toLowerCase().includes(search.toLowerCase())
+      c.salesperson.toLowerCase().includes(search.toLowerCase()) ||
+      (c.contractId ?? "").toLowerCase().includes(search.toLowerCase())
     );
     return [...data].sort((a, b) => sortDir === "desc" ? b.dealValue - a.dealValue : a.dealValue - b.dealValue);
   }, [contracts, search, sortDir]);

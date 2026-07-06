@@ -1,7 +1,7 @@
 "use client";
 import { useMemo } from "react";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
-import { useContracts } from "@/lib/api";
+import { useActiveContracts } from "@/lib/api";
 import { formatCurrency, SALESPERSON_COLORS } from "@/lib/utils";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/Card";
 import { DateRange } from "@/lib/range-utils";
@@ -29,7 +29,7 @@ function inRange(year: number, month: number, range: DateRange) {
 }
 
 export function PipelineDonut({ range }: PipelineDonutProps) {
-  const { data: contracts = [], isLoading } = useContracts();
+  const { data: contracts = [], isLoading } = useActiveContracts();
 
   const { data, total } = useMemo(() => {
     const totals: Record<string, number> = {};

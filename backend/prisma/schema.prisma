@@ -61,7 +61,7 @@ model Contract {
   clientName         String
   product            String
   accountManager     String
-  contractId         String?
+  contractId         String
   profiles           Int
   gstStatus          GSTStatus
   dealValue          Float
@@ -77,7 +77,10 @@ model Contract {
   priceOverrides PriceOverride[]
   contractEdits  ContractEdit[]
   onboarding     OnboardingPayment?
+
+  @@index([contractId])
 }
+
 
 model RenewalMonth {
   id               String        @id @default(cuid())

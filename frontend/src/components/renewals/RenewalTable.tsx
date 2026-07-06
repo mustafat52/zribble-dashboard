@@ -55,7 +55,8 @@ export function RenewalTable({ year, month, onMarkPayment, salesperson }: Renewa
     if (search.trim()) data = data.filter((r) =>
       r.contract.clientName.toLowerCase().includes(search.toLowerCase()) ||
       r.contract.accountManager.toLowerCase().includes(search.toLowerCase()) ||
-      r.contract.product.toLowerCase().includes(search.toLowerCase())
+      r.contract.product.toLowerCase().includes(search.toLowerCase()) ||
+      (r.contract.contractId ?? "").toLowerCase().includes(search.toLowerCase())
     );
     return [...data].sort((a, b) => {
       let av: any = "", bv: any = "";
@@ -124,7 +125,7 @@ export function RenewalTable({ year, month, onMarkPayment, salesperson }: Renewa
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex-1 min-w-48 max-w-xs">
-          <Input placeholder="Search client, AM, product…" value={search} onChange={(e) => setSearch(e.target.value)} leftIcon={<Search className="w-3.5 h-3.5" />} />
+          <Input placeholder="Search client, AM, product, ID…" value={search} onChange={(e) => setSearch(e.target.value)} leftIcon={<Search className="w-3.5 h-3.5" />} />
         </div>
 
         {/* Exec filter — hidden when locked to a salesperson */}

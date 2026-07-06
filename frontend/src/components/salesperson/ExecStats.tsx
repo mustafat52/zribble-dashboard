@@ -1,6 +1,6 @@
 "use client";
 import { useMemo } from "react";
-import { useContracts } from "@/lib/api";
+import { useActiveContracts } from "@/lib/api";
 import { formatCurrency, SALESPERSON_COLORS } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { Users, IndianRupee, CalendarDays, TrendingUp } from "lucide-react";
@@ -17,7 +17,7 @@ interface ExecStatsProps {
 }
 
 export function ExecStats({ exec, dimension = "exec" }: ExecStatsProps) {
-  const { data: allContracts = [], isLoading } = useContracts();
+  const { data: allContracts = [], isLoading } = useActiveContracts();
   const color = dimension === "am" ? AM_COLOR : (SALESPERSON_COLORS[exec] ?? "#3B82F6");
 
   const stats = useMemo(() => {

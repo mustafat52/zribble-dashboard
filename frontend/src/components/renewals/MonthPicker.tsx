@@ -1,7 +1,7 @@
 "use client";
 import { ChevronLeft, ChevronRight, CalendarDays } from "lucide-react";
 import { cn, getMonthShort, formatCurrency } from "@/lib/utils";
-import { useContracts } from "@/lib/api";
+import { useActiveContracts } from "@/lib/api";
 import { useMemo } from "react";
 
 interface MonthPickerProps {
@@ -15,7 +15,7 @@ const MAX_YEAR = 2028;
 const MIN_MONTH_2026 = 7;
 
 export function MonthPicker({ year, month, onChange }: MonthPickerProps) {
-  const { data: allContracts = [] } = useContracts();
+  const { data: allContracts = [] } = useActiveContracts();
   const months = Array.from({ length: 12 }, (_, i) => i + 1);
   const canPrevYear = year > MIN_YEAR;
   const canNextYear = year < MAX_YEAR;

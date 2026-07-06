@@ -1,6 +1,6 @@
 "use client";
 import { useMemo } from "react";
-import { useContracts } from "@/lib/api";
+import { useActiveContracts } from "@/lib/api";
 import { formatCurrency, SALESPERSON_COLORS } from "@/lib/utils";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/Card";
 import { Table, THead, Th, TBody, Tr, Td } from "@/components/ui/Table";
@@ -11,7 +11,7 @@ export function SalespersonTable() {
   const router = useRouter();
   const { user, canPerform } = useAuth();
   const execFilter = canPerform("view_all") ? null : user?.salesperson ?? null;
-  const { data: allContracts = [], isLoading } = useContracts();
+  const { data: allContracts = [], isLoading } = useActiveContracts();
 
   const summary = useMemo(() => {
     const contracts = execFilter

@@ -1,6 +1,6 @@
 "use client";
 import { useMemo } from "react";
-import { useContracts } from "@/lib/api";
+import { useActiveContracts } from "@/lib/api";
 import { SALESPERSON_COLORS } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 
@@ -19,7 +19,7 @@ interface ExecSelectorProps {
 }
 
 export function ExecSelector({ selected, onChange, dimension = "exec" }: ExecSelectorProps) {
-  const { data: allContracts = [] } = useContracts();
+  const { data: allContracts = [] } = useActiveContracts();
 
   // Executives are a small, fixed team — kept as a stable hardcoded list so
   // the chip order never reshuffles. Account Managers are a larger team that

@@ -3,7 +3,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { cn, SALESPERSON_COLORS } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
-import { useContracts } from "@/lib/api";
+import { useActiveContracts } from "@/lib/api";
 import {
   LayoutDashboard, CalendarDays, CreditCard, Users, UserCircle,
   PlusCircle, TrendingUp, ChevronRight, Settings, LogOut, BarChart2,
@@ -36,7 +36,7 @@ export function Sidebar() {
   const pathname  = usePathname();
   const router    = useRouter();
   const { user, canPerform, logout } = useAuth();
-  const { data: contracts = [] } = useContracts();
+  const { data: contracts = [] } = useActiveContracts();
 
   // Live account count per salesperson — distinct client names (matches
   // ExecStats.tsx's "Active Accounts" calculation on the Salesperson page),

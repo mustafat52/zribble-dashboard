@@ -1,6 +1,6 @@
 "use client";
 import { cn, formatCurrency } from "@/lib/utils";
-import { useContracts } from "@/lib/api";
+import { useActiveContracts } from "@/lib/api";
 import { TrendingUp, Users, CalendarClock, CheckCircle2, AlertTriangle, Clock, IndianRupee, ArrowUpRight, UserPlus, RefreshCw } from "lucide-react";
 import { DateRange } from "@/lib/range-utils";
 import { useAuth } from "@/lib/auth-context";
@@ -103,7 +103,7 @@ function computeStats(contracts: Contract[], range: DateRange) {
 export function StatCards({ range }: StatCardsProps) {
   const { user, canPerform } = useAuth();
   const execFilter = canPerform("view_all") ? null : user?.salesperson ?? null;
-  const { data: allContracts = [], isLoading } = useContracts();
+  const { data: allContracts = [], isLoading } = useActiveContracts();
 
   const contracts = execFilter
     ? allContracts.filter((c) => c.salesperson === execFilter)

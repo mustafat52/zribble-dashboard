@@ -1,7 +1,7 @@
 "use client";
 import { useRef, useMemo } from "react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
-import { useContracts } from "@/lib/api";
+import { useActiveContracts } from "@/lib/api";
 import { formatCurrency, getMonthShort } from "@/lib/utils";
 import { Card, CardHeader, CardTitle } from "@/components/ui/Card";
 import { DateRange } from "@/lib/range-utils";
@@ -49,7 +49,7 @@ function inRange(year: number, month: number, range: DateRange) {
 
 export function RevenueChart({ range, months, onMonthsChange }: RevenueChartProps) {
   const inputRef = useRef<HTMLInputElement>(null);
-  const { data: contracts = [], isLoading } = useContracts();
+  const { data: contracts = [], isLoading } = useActiveContracts();
 
   // Build monthly totals from contracts
   const data = useMemo(() => {

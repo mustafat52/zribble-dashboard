@@ -1,7 +1,7 @@
 "use client";
 import { useMemo } from "react";
 import Link from "next/link";
-import { useContracts } from "@/lib/api";
+import { useActiveContracts } from "@/lib/api";
 import { SALESPERSON_COLORS } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { GitBranch } from "lucide-react";
@@ -27,7 +27,7 @@ interface ExecCrossBreakdownProps {
  * Each chip links straight to that person's own Salesperson View page.
  */
 export function ExecCrossBreakdown({ exec, dimension }: ExecCrossBreakdownProps) {
-  const { data: allContracts = [] } = useContracts();
+  const { data: allContracts = [] } = useActiveContracts();
 
   // When viewing an exec, we break down by AM (and vice versa) — this is
   // the *other* dimension from the one currently selected.

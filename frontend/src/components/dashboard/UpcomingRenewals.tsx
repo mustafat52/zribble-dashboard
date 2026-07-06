@@ -1,6 +1,6 @@
 "use client";
 import { useMemo } from "react";
-import { useContracts } from "@/lib/api";
+import { useActiveContracts } from "@/lib/api";
 import { formatCurrency, SALESPERSON_COLORS } from "@/lib/utils";
 import { Card, CardHeader, CardTitle, CardFooter } from "@/components/ui/Card";
 import { StatusBadge } from "@/components/ui/Badge";
@@ -14,7 +14,7 @@ import { useAuth } from "@/lib/auth-context";
 export function UpcomingRenewals() {
   const { user, canPerform } = useAuth();
   const execFilter = canPerform("view_all") ? null : user?.salesperson ?? null;
-  const { data: allContracts = [], isLoading } = useContracts();
+  const { data: allContracts = [], isLoading } = useActiveContracts();
 
   const items = useMemo(() => {
     const now = new Date();

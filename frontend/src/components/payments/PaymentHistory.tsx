@@ -43,17 +43,18 @@ export function PaymentHistory() {
         const payments = (r as any).payments ?? [];
         const paid = payments.reduce((a: number, p: any) => a + p.amount, 0);
         return {
-          contractId:     c.id,
-          clientName:     c.clientName,
-          salesperson:    c.salesperson,
-          accountManager: c.accountManager,
-          product:        c.product,
-          year:           r.year,
-          month:          r.month,
-          expected:       r.amount,
-          collected:      r.status === "collected" ? r.amount : paid,
-          outstanding:    Math.max(r.status === "collected" ? 0 : r.amount - paid, 0),
-          status:         r.status,
+          contractId:          c.id,
+          businessContractId:  c.contractId ?? "",
+          clientName:          c.clientName,
+          salesperson:         c.salesperson,
+          accountManager:      c.accountManager,
+          product:             c.product,
+          year:                r.year,
+          month:               r.month,
+          expected:            r.amount,
+          collected:           r.status === "collected" ? r.amount : paid,
+          outstanding:         Math.max(r.status === "collected" ? 0 : r.amount - paid, 0),
+          status:              r.status,
           payments,
         };
       })
@@ -66,7 +67,8 @@ export function PaymentHistory() {
     if (search.trim()) data = data.filter((r) =>
       r.clientName.toLowerCase().includes(search.toLowerCase()) ||
       r.accountManager.toLowerCase().includes(search.toLowerCase()) ||
-      r.product.toLowerCase().includes(search.toLowerCase())
+      r.product.toLowerCase().includes(search.toLowerCase()) ||
+      r.businessContractId.toLowerCase().includes(search.toLowerCase())
     );
     return [...data].sort((a, b) => {
       const map: Record<SortKey, any[]> = {
@@ -158,7 +160,7 @@ export function PaymentHistory() {
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex-1 min-w-48 max-w-xs">
-          <Input placeholder="Search client, AM, product…" value={search} onChange={(e) => setSearch(e.target.value)} leftIcon={<Search className="w-3.5 h-3.5" />} />
+          <Input placeholder="Search client, AM, product, ID…" value={search} onChange={(e) => setSearch(e.target.value)} leftIcon={<Search className="w-3.5 h-3.5" />} />
         </div>
         {!execFilter && (
           <div className="flex gap-1 flex-wrap">

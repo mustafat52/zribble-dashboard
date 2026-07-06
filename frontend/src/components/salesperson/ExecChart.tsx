@@ -1,7 +1,7 @@
 "use client";
 import { useState, useMemo } from "react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { useContracts } from "@/lib/api";
+import { useActiveContracts } from "@/lib/api";
 import { formatCurrency, getMonthShort, SALESPERSON_COLORS } from "@/lib/utils";
 import { Card, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -39,7 +39,7 @@ interface ExecChartProps {
 export function ExecChart({ exec, dimension = "exec" }: ExecChartProps) {
   const [year, setYear] = useState<YearFilter>(2026);
   const color = dimension === "am" ? AM_COLOR : (SALESPERSON_COLORS[exec] ?? "#3B82F6");
-  const { data: allContracts = [], isLoading } = useContracts();
+  const { data: allContracts = [], isLoading } = useActiveContracts();
 
   const contracts = useMemo(
     () => allContracts.filter((c) =>
