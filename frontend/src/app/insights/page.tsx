@@ -186,9 +186,17 @@ export default function InsightsPage() {
   }, [filtered]);
 
   const visibleClients = useMemo(() =>
-    Object.entries(clientMap).filter(([, cs]) => !multiOnly || cs.length > 1),
-
-    [clientMap, multiOnly]);
+    Object.entries(clientMap).filter(([name, cs]) => {
+      if (multiOnly && cs.length <= 1) return false;
+      // Hide clients with no renewals in the selected month range
+      const rangePipeline = cs.reduce((a, c) =>
+        a + (c.renewalSchedule ?? []).filter((r) => {
+          const col = `${["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][r.month-1]}-${r.year}`;
+          return selectedMonthCols.includes(col);
+        }).reduce((b, r) => b + r.amount, 0), 0);
+      return rangePipeline > 0;
+    }),
+    [clientMap, multiOnly, selectedMonthCols]);
 
   const filteredWithMonthRange = useMemo(() =>
     filtered.map((c) => ({
@@ -242,9 +250,22 @@ export default function InsightsPage() {
   }, [filteredWithMonthRange, clientMap]);
 
   const totalPipeline  = filteredWithMonthRange.reduce((a, c) => a + c.renewalSchedule.reduce((b, r) => b + r.amount, 0), 0);
-  const totalContracts = filtered.length;
-  const totalClients   = Object.keys(clientMap).length;
-  const multiCount     = multiServiceClients.length;
+
+  // Only count clients/contracts that have at least one renewal in the selected range
+  const clientsInRange = Object.entries(clientMap).filter(([, cs]) =>
+    cs.some((c) => (c.renewalSchedule ?? []).some((r) => {
+      const col = `${["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][r.month-1]}-${r.year}`;
+      return selectedMonthCols.includes(col);
+    }))
+  );
+  const totalContracts = clientsInRange.reduce((a, [, cs]) => a + cs.length, 0);
+  const totalClients   = clientsInRange.length;
+  const multiCount     = multiServiceClients.filter(([, cs]) =>
+    cs.some((c) => (c.renewalSchedule ?? []).some((r) => {
+      const col = `${["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][r.month-1]}-${r.year}`;
+      return selectedMonthCols.includes(col);
+    }))
+  ).length;
 
   const activeFilterCount = (isEmployee ? 0 : selExecs.length) + selServices.length + (isAM ? 0 : selAMs.length)
     + (selGST !== "all" ? 1 : 0)
