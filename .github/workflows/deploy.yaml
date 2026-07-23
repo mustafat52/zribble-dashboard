@@ -1,0 +1,33 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to VPS
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: root
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            set -e
+            cd /www/wwwroot/zribble-dashboard
+            git pull origin main
+
+            # Backend
+            cd backend
+            /usr/local/bin/npm install
+            /usr/local/bin/npm run build
+            /usr/local/bin/npx prisma migrate deploy
+            /usr/local/bin/pm2 restart zribble-backend
+
+            # Frontend
+            cd ../frontend
+            /usr/local/bin/npm install
+            /usr/local/bin/npm run build
+            /usr/local/bin/pm2 restart zribble-frontend

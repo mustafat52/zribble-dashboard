@@ -317,7 +317,7 @@ async function main() {
         clientName: clientName as string,
         product: product as string,
         accountManager: accountManager as string,
-        contractId: (contractId as string) || null,
+        contractId: (contractId as string) ,
         profiles: profiles as number,
         gstStatus: gstStatus as "Y" | "N",
         dealValue: dealValue as number,
