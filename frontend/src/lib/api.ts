@@ -251,20 +251,33 @@ export function useUpdateRenewalStatus() {
 // renewal — invalidating ['contracts'] is what makes the corrected date
 // reflect everywhere (Calendar, Client page, Dashboard) without any of
 // those components needing individual changes.
+export interface UpdateRenewalDateResponse {
+  updated: { contractId: string; year: number; month: number; actualDueDate: string | null };
+  cascaded: {
+    shiftDays: number;
+    updatedCount: number;
+    skipped: { year: number; month: number }[];
+  } | null;
+}
+
 export function useUpdateRenewalDate() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({
-      contractId, year, month, date,
+      contractId, year, month, date, cascade,
     }: {
       contractId: string;
       year: number;
       month: number;
       date: string | null; // ISO date string, e.g. "2026-07-15"
+      // When true, every LATER renewal on this contract shifts by the same
+      // number of days as this edit — skipping any that already have their
+      // own manual date correction. Ignored when date is null (clearing).
+      cascade?: boolean;
     }) =>
-      apiFetch(`/renewals/${contractId}/${year}/${month}/date`, {
+      apiFetch<UpdateRenewalDateResponse>(`/renewals/${contractId}/${year}/${month}/date`, {
         method: "PATCH",
-        body: JSON.stringify({ date }),
+        body: JSON.stringify({ date, cascade }),
       }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["contracts"] }),
   });

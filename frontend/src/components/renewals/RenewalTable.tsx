@@ -1,7 +1,7 @@
 "use client";
 import { useState, useMemo } from "react";
 import { useActiveContracts, useUpdateRenewalDate } from "@/lib/api";
-import { formatCurrency, SALESPERSON_COLORS } from "@/lib/utils";
+import { formatCurrency, SALESPERSON_COLORS, getMonthShort } from "@/lib/utils";
 import { Table, THead, Th, TBody, Tr, Td } from "@/components/ui/Table";
 import { StatusBadge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -59,6 +59,15 @@ export function RenewalTable({ year, month, onMarkPayment, salesperson }: Renewa
   // Which row's due-date editor is open, keyed `${contractId}-${year}-${month}`
   const [editingDateKey, setEditingDateKey] = useState<string | null>(null);
   const [dateDraft,      setDateDraft]      = useState("");
+  // Opt-in: when checked, saving this edit also shifts every LATER renewal
+  // on this contract by the same number of days (skipping any that already
+  // have their own manual date correction). Unchecked by default so a plain
+  // one-off correction behaves exactly as before.
+  const [cascadeDate,    setCascadeDate]    = useState(false);
+  // Transient summary shown after a cascading save, e.g. "Updated 5 future
+  // renewals · skipped Sep 2026 (already has a manual date)". Cleared on
+  // the next edit.
+  const [cascadeResult,  setCascadeResult]  = useState<{ key: string; updatedCount: number; shiftDays: number; skipped: { year: number; month: number }[] } | null>(null);
   const updateRenewalDate = useUpdateRenewalDate();
 
   // Pull live data from API cache — replaces getRenewalsForMonth() from mock-data
@@ -124,16 +133,29 @@ export function RenewalTable({ year, month, onMarkPayment, salesperson }: Renewa
     const key = `${c.id}-${r.year}-${r.month}`;
     setEditingDateKey(key);
     setDateDraft(toDateInputValue(effectiveDueDate(c, r)));
+    setCascadeDate(false);
+    setCascadeResult(null);
   }
   function cancelEditDate() {
     setEditingDateKey(null);
     setDateDraft("");
+    setCascadeDate(false);
   }
   function saveEditDate(c: Contract, r: RenewalMonth) {
     if (!dateDraft) return;
+    const key = `${c.id}-${r.year}-${r.month}`;
     updateRenewalDate.mutate(
-      { contractId: c.id, year: r.year, month: r.month, date: dateDraft },
-      { onSuccess: () => { setEditingDateKey(null); setDateDraft(""); } }
+      { contractId: c.id, year: r.year, month: r.month, date: dateDraft, cascade: cascadeDate },
+      {
+        onSuccess: (res) => {
+          setEditingDateKey(null);
+          setDateDraft("");
+          setCascadeDate(false);
+          if (res.cascaded) {
+            setCascadeResult({ key, updatedCount: res.cascaded.updatedCount, shiftDays: res.cascaded.shiftDays, skipped: res.cascaded.skipped });
+          }
+        },
+      }
     );
   }
   function clearDateOverride(c: Contract, r: RenewalMonth) {
@@ -241,6 +263,7 @@ export function RenewalTable({ year, month, onMarkPayment, salesperson }: Renewa
                 const isCorrected = !!r.actualDueDate;
                 const displayDate = effectiveDueDate(c, r);
                 return (
+                  <>
                   <Tr key={key}>
                     <Td><ClientLink clientName={c.clientName} salesperson={c.salesperson} showDot /></Td>
                     <Td><span className="text-slate-500">{c.salesperson}</span></Td>
@@ -249,27 +272,38 @@ export function RenewalTable({ year, month, onMarkPayment, salesperson }: Renewa
                     <Td><span className={cn("text-xs font-medium", c.gstStatus === "Y" ? "text-accent-cyan" : "text-slate-300")}>{c.gstStatus === "Y" ? "GST" : "—"}</span></Td>
                     <Td>
                       {isEditingDate ? (
-                        <div className="flex items-center gap-1">
-                          <input
-                            type="date"
-                            value={dateDraft}
-                            onChange={(e) => setDateDraft(e.target.value)}
-                            className="w-[140px] px-2 py-1 text-xs bg-white border border-accent-border rounded-lg focus:outline-none focus:ring-1 focus:ring-accent/20 text-slate-700"
-                            autoFocus
-                          />
-                          <button
-                            onClick={() => saveEditDate(c, r)}
-                            disabled={updateRenewalDate.isPending}
-                            title="Save date"
-                            className="p-1 rounded text-accent-green hover:bg-accent-greenLight transition-colors disabled:opacity-40">
-                            <Check className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            onClick={cancelEditDate}
-                            title="Cancel"
-                            className="p-1 rounded text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors">
-                            <X className="w-3.5 h-3.5" />
-                          </button>
+                        <div className="flex flex-col gap-1.5 py-1">
+                          <div className="flex items-center gap-1">
+                            <input
+                              type="date"
+                              value={dateDraft}
+                              onChange={(e) => setDateDraft(e.target.value)}
+                              className="w-[140px] px-2 py-1 text-xs bg-white border border-accent-border rounded-lg focus:outline-none focus:ring-1 focus:ring-accent/20 text-slate-700"
+                              autoFocus
+                            />
+                            <button
+                              onClick={() => saveEditDate(c, r)}
+                              disabled={updateRenewalDate.isPending}
+                              title="Save date"
+                              className="p-1 rounded text-accent-green hover:bg-accent-greenLight transition-colors disabled:opacity-40">
+                              <Check className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={cancelEditDate}
+                              title="Cancel"
+                              className="p-1 rounded text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors">
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                          <label className="flex items-center gap-1.5 text-[10px] text-slate-500 cursor-pointer select-none">
+                            <input
+                              type="checkbox"
+                              checked={cascadeDate}
+                              onChange={(e) => setCascadeDate(e.target.checked)}
+                              className="w-3 h-3 accent-accent"
+                            />
+                            Also shift all future renewals by the same days
+                          </label>
                         </div>
                       ) : (
                         <div className="flex items-center gap-1.5">
@@ -312,6 +346,28 @@ export function RenewalTable({ year, month, onMarkPayment, salesperson }: Renewa
                       )}
                     </Td>
                   </Tr>
+                  {cascadeResult && cascadeResult.key === key && (
+                    <Tr key={`${key}-cascade-result`}>
+                      <td colSpan={9} className="px-4 py-2">
+                        <div className="flex items-start justify-between gap-3 px-3 py-2 bg-accent-light/30 border border-accent-border rounded-lg text-[11px] text-slate-600">
+                          <div>
+                            <span className="font-semibold text-accent">
+                              Shifted {cascadeResult.updatedCount} future renewal{cascadeResult.updatedCount !== 1 ? "s" : ""} by {Math.abs(cascadeResult.shiftDays)} day{Math.abs(cascadeResult.shiftDays) !== 1 ? "s" : ""}.
+                            </span>
+                            {cascadeResult.skipped.length > 0 && (
+                              <span className="ml-1 text-accent-amber">
+                                Skipped {cascadeResult.skipped.map((s) => `${getMonthShort(s.month)} ${s.year}`).join(", ")} — already has its own manual date.
+                              </span>
+                            )}
+                          </div>
+                          <button onClick={() => setCascadeResult(null)} className="text-slate-400 hover:text-slate-600 flex-shrink-0">
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      </td>
+                    </Tr>
+                  )}
+                  </>
                 );
               })}
             </TBody>
