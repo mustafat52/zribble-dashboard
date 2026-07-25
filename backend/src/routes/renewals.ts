@@ -209,4 +209,74 @@ router.patch(
   }
 );
 
+// ── PATCH /renewals/:contractId/:year/:month/date ─────────────────────────────
+// Manually correct a single renewal's actual due date (e.g. a 2-3 day
+// extension, or a shift into a different month/year). This ONLY updates the
+// `actualDueDate` field on this one RenewalMonth row — it never touches any
+// other renewal on the contract, and `year`/`month` (the original schedule
+// slot used for grouping, summaries, and payment-matching) are left as-is.
+// Pass `date: null` to clear the override and revert to the calculated date.
+router.patch(
+  "/:contractId/:year/:month/date",
+  canWrite,
+  async (req: Request, res: Response) => {
+    try {
+      const user = req.user!;
+      const { contractId, year, month } = req.params;
+      const { date } = req.body as { date: string | null };
+
+      if (date !== null && date !== undefined && isNaN(Date.parse(date))) {
+        res.status(400).json({ error: "Invalid date" });
+        return;
+      }
+
+      const contract = await prisma.contract.findUnique({ where: { id: contractId } });
+      if (!contract) {
+        res.status(404).json({ error: "Contract not found" });
+        return;
+      }
+
+      if (user.role === "employee" && contract.salesperson !== user.salesperson) {
+        res.status(403).json({ error: "Forbidden" });
+        return;
+      }
+      if (user.role === "account_manager" && contract.accountManager !== user.accountManager) {
+        res.status(403).json({ error: "Forbidden" });
+        return;
+      }
+
+      const renewalMonth = await prisma.renewalMonth.findUnique({
+        where: {
+          contractId_year_month: {
+            contractId,
+            year: parseInt(year),
+            month: parseInt(month),
+          },
+        },
+      });
+
+      if (!renewalMonth) {
+        res.status(404).json({ error: "Renewal month not found" });
+        return;
+      }
+
+      const updated = await prisma.renewalMonth.update({
+        where: {
+          contractId_year_month: {
+            contractId,
+            year: parseInt(year),
+            month: parseInt(month),
+          },
+        },
+        data: { actualDueDate: date ? new Date(date) : null },
+      });
+
+      res.json(updated);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Failed to update renewal date" });
+    }
+  }
+);
+
 export default router;

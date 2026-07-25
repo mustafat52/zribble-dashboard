@@ -1,7 +1,7 @@
 "use client";
 import { useMemo } from "react";
 import { useActiveContracts } from "@/lib/api";
-import { formatCurrency, SALESPERSON_COLORS } from "@/lib/utils";
+import { formatCurrency, SALESPERSON_COLORS, cn } from "@/lib/utils";
 import { Card, CardHeader, CardTitle, CardFooter } from "@/components/ui/Card";
 import { StatusBadge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -36,7 +36,11 @@ export function UpcomingRenewals() {
             accountManager: c.accountManager,
             product:        c.product,
             amount:         r.amount,
-            dueDate:        c.firstRenewalDate,
+            // Use the manually-corrected date if one was set for this
+            // specific renewal, otherwise fall back to the contract's
+            // firstRenewalDate as before.
+            dueDate:        r.actualDueDate ?? c.firstRenewalDate,
+            isCorrected:    !!r.actualDueDate,
             status:         r.status,
           }))
       )
@@ -75,6 +79,10 @@ export function UpcomingRenewals() {
                   <span className="text-[11px] text-slate-400 truncate">{r.product}</span>
                   <span className="text-slate-300">·</span>
                   <span className="text-[11px] text-slate-400">{r.accountManager}</span>
+                  <span className="text-slate-300">·</span>
+                  <span className={cn("text-[11px]", r.isCorrected ? "font-semibold text-accent" : "text-slate-400")}>
+                    {new Date(r.dueDate).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
+                  </span>
                 </div>
               </div>
               <div className="flex flex-col items-end gap-1 flex-shrink-0">

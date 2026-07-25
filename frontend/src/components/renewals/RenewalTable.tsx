@@ -1,14 +1,14 @@
 "use client";
 import { useState, useMemo } from "react";
-import { useActiveContracts } from "@/lib/api";
+import { useActiveContracts, useUpdateRenewalDate } from "@/lib/api";
 import { formatCurrency, SALESPERSON_COLORS } from "@/lib/utils";
 import { Table, THead, Th, TBody, Tr, Td } from "@/components/ui/Table";
 import { StatusBadge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { EmptyState } from "@/components/ui/Misc";
-import { PaymentStatus } from "@/types";
-import { Search, Filter, CreditCard, ChevronDown, ChevronUp, IndianRupee, CheckCircle2, Clock, AlertTriangle, CalendarDays } from "lucide-react";
+import { Contract, PaymentStatus, RenewalMonth } from "@/types";
+import { Search, Filter, CreditCard, ChevronDown, ChevronUp, IndianRupee, CheckCircle2, Clock, AlertTriangle, CalendarDays, Pencil, Check, X, RotateCcw } from "lucide-react";
 import { ClientLink } from "@/components/clients/ClientLink";
 import { cn } from "@/lib/utils";
 
@@ -28,12 +28,38 @@ const STATUSES: { label: string; value: PaymentStatus | "all" }[] = [
 type SortKey = "clientName" | "salesperson" | "amount" | "status";
 type SortDir  = "asc" | "desc";
 
+// Calculated fallback date when no manual override (r.actualDueDate) exists —
+// mirrors the logic RenewalCalendar.tsx uses, kept in sync with it.
+// TODO: worth extracting to lib/utils.ts as a shared helper if a third
+// component ends up needing this (Section 7.3-style drift risk otherwise).
+function calculatedDueDate(c: Contract, r: RenewalMonth): Date {
+  const firstDate = new Date(c.firstRenewalDate);
+  let day = firstDate.getDate();
+  if (firstDate.getFullYear() !== r.year || firstDate.getMonth() + 1 !== r.month) {
+    day = (parseInt(c.id.replace(/\D/g, "").slice(-4) || "1") % 28) + 1;
+  }
+  return new Date(r.year, r.month - 1, day);
+}
+
+function effectiveDueDate(c: Contract, r: RenewalMonth): Date {
+  return r.actualDueDate ? new Date(r.actualDueDate) : calculatedDueDate(c, r);
+}
+
+function toDateInputValue(d: Date): string {
+  return d.toISOString().split("T")[0];
+}
+
 export function RenewalTable({ year, month, onMarkPayment, salesperson }: RenewalTableProps) {
   const [search,       setSearch]       = useState("");
   const [execFilter,   setExecFilter]   = useState("All");
   const [statusFilter, setStatusFilter] = useState<PaymentStatus | "all">("all");
   const [sortKey,      setSortKey]      = useState<SortKey>("amount");
   const [sortDir,      setSortDir]      = useState<SortDir>("desc");
+
+  // Which row's due-date editor is open, keyed `${contractId}-${year}-${month}`
+  const [editingDateKey, setEditingDateKey] = useState<string | null>(null);
+  const [dateDraft,      setDateDraft]      = useState("");
+  const updateRenewalDate = useUpdateRenewalDate();
 
   // Pull live data from API cache — replaces getRenewalsForMonth() from mock-data
   const { data: contracts = [], isLoading } = useActiveContracts();
@@ -92,6 +118,29 @@ export function RenewalTable({ year, month, onMarkPayment, salesperson }: Renewa
   function SortIcon({ k }: { k: SortKey }) {
     if (sortKey !== k) return <ChevronDown className="w-3 h-3 text-slate-300" />;
     return sortDir === "asc" ? <ChevronUp className="w-3 h-3 text-accent" /> : <ChevronDown className="w-3 h-3 text-accent" />;
+  }
+
+  function startEditDate(c: Contract, r: RenewalMonth) {
+    const key = `${c.id}-${r.year}-${r.month}`;
+    setEditingDateKey(key);
+    setDateDraft(toDateInputValue(effectiveDueDate(c, r)));
+  }
+  function cancelEditDate() {
+    setEditingDateKey(null);
+    setDateDraft("");
+  }
+  function saveEditDate(c: Contract, r: RenewalMonth) {
+    if (!dateDraft) return;
+    updateRenewalDate.mutate(
+      { contractId: c.id, year: r.year, month: r.month, date: dateDraft },
+      { onSuccess: () => { setEditingDateKey(null); setDateDraft(""); } }
+    );
+  }
+  function clearDateOverride(c: Contract, r: RenewalMonth) {
+    updateRenewalDate.mutate(
+      { contractId: c.id, year: r.year, month: r.month, date: null },
+      { onSuccess: () => { setEditingDateKey(null); setDateDraft(""); } }
+    );
   }
 
   if (isLoading) {
@@ -180,34 +229,91 @@ export function RenewalTable({ year, month, onMarkPayment, salesperson }: Renewa
               <Th>Product</Th>
               <Th>Account Manager</Th>
               <Th>GST</Th>
-              <Th>Renews</Th>
+              <Th>Due Date</Th>
               <Th><button onClick={() => toggleSort("amount")} className="flex items-center gap-1 hover:text-slate-700">Amount <SortIcon k="amount" /></button></Th>
               <Th><button onClick={() => toggleSort("status")} className="flex items-center gap-1 hover:text-slate-700">Status <SortIcon k="status" /></button></Th>
               <Th>Action</Th>
             </THead>
             <TBody>
-              {rows.map(({ contract: c, renewal: r }) => (
-                <Tr key={`${c.id}-${r.year}-${r.month}`}>
-                  <Td><ClientLink clientName={c.clientName} salesperson={c.salesperson} showDot /></Td>
-                  <Td><span className="text-slate-500">{c.salesperson}</span></Td>
-                  <Td><span className="text-xs px-2 py-0.5 rounded bg-slate-100 text-slate-500 border border-slate-200">{c.product}</span></Td>
-                  <Td>{c.accountManager}</Td>
-                  <Td><span className={cn("text-xs font-medium", c.gstStatus === "Y" ? "text-accent-cyan" : "text-slate-300")}>{c.gstStatus === "Y" ? "GST" : "—"}</span></Td>
-                  <Td><span className="text-slate-400">{c.contractTermMonths}m</span></Td>
-                  <Td><span className="font-semibold text-slate-700">{formatCurrency(r.amount)}</span></Td>
-                  <Td><StatusBadge status={r.status} /></Td>
-                  <Td>
-                    {r.status !== "collected" && r.status !== "waived" && (
-                      <Button size="sm" variant="secondary" onClick={() => onMarkPayment(c.id, r.year, r.month)}>
-                        <CreditCard className="w-3 h-3" /> Pay
-                      </Button>
-                    )}
-                    {r.status === "collected" && (
-                      <span className="text-xs text-accent-green flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> Done</span>
-                    )}
-                  </Td>
-                </Tr>
-              ))}
+              {rows.map(({ contract: c, renewal: r }) => {
+                const key = `${c.id}-${r.year}-${r.month}`;
+                const isEditingDate = editingDateKey === key;
+                const isCorrected = !!r.actualDueDate;
+                const displayDate = effectiveDueDate(c, r);
+                return (
+                  <Tr key={key}>
+                    <Td><ClientLink clientName={c.clientName} salesperson={c.salesperson} showDot /></Td>
+                    <Td><span className="text-slate-500">{c.salesperson}</span></Td>
+                    <Td><span className="text-xs px-2 py-0.5 rounded bg-slate-100 text-slate-500 border border-slate-200">{c.product}</span></Td>
+                    <Td>{c.accountManager}</Td>
+                    <Td><span className={cn("text-xs font-medium", c.gstStatus === "Y" ? "text-accent-cyan" : "text-slate-300")}>{c.gstStatus === "Y" ? "GST" : "—"}</span></Td>
+                    <Td>
+                      {isEditingDate ? (
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="date"
+                            value={dateDraft}
+                            onChange={(e) => setDateDraft(e.target.value)}
+                            className="w-[140px] px-2 py-1 text-xs bg-white border border-accent-border rounded-lg focus:outline-none focus:ring-1 focus:ring-accent/20 text-slate-700"
+                            autoFocus
+                          />
+                          <button
+                            onClick={() => saveEditDate(c, r)}
+                            disabled={updateRenewalDate.isPending}
+                            title="Save date"
+                            className="p-1 rounded text-accent-green hover:bg-accent-greenLight transition-colors disabled:opacity-40">
+                            <Check className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={cancelEditDate}
+                            title="Cancel"
+                            className="p-1 rounded text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors">
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1.5">
+                          <span className={cn("text-xs", isCorrected ? "font-semibold text-accent" : "text-slate-500")}>
+                            {displayDate.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                          </span>
+                          {isCorrected && (
+                            <span title="Manually corrected date" className="text-[9px] font-semibold text-accent bg-accent-light border border-accent-border px-1 py-0.5 rounded">
+                              edited
+                            </span>
+                          )}
+                          <button
+                            onClick={() => startEditDate(c, r)}
+                            title="Edit due date"
+                            className="p-0.5 rounded text-slate-300 hover:text-accent hover:bg-accent-light/40 transition-colors">
+                            <Pencil className="w-3 h-3" />
+                          </button>
+                          {isCorrected && (
+                            <button
+                              onClick={() => clearDateOverride(c, r)}
+                              disabled={updateRenewalDate.isPending}
+                              title="Revert to calculated date"
+                              className="p-0.5 rounded text-slate-300 hover:text-accent-amber hover:bg-accent-amberLight transition-colors disabled:opacity-40">
+                              <RotateCcw className="w-3 h-3" />
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </Td>
+                    <Td><span className="font-semibold text-slate-700">{formatCurrency(r.amount)}</span></Td>
+                    <Td><StatusBadge status={r.status} /></Td>
+                    <Td>
+                      {r.status !== "collected" && r.status !== "waived" && (
+                        <Button size="sm" variant="secondary" onClick={() => onMarkPayment(c.id, r.year, r.month)}>
+                          <CreditCard className="w-3 h-3" /> Pay
+                        </Button>
+                      )}
+                      {r.status === "collected" && (
+                        <span className="text-xs text-accent-green flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> Done</span>
+                      )}
+                    </Td>
+                  </Tr>
+                );
+              })}
             </TBody>
           </Table>
         )}

@@ -108,29 +108,46 @@ export function RenewalCalendar({ year, month, promises, salesperson }: RenewalC
     ? allContracts.filter((c) => c.salesperson === salesperson)
     : allContracts;
 
-  // Group renewals by day using firstRenewalDate
+  // Group renewals by day using the corrected date if one was manually set
+  // (r.actualDueDate), otherwise the calculated date from firstRenewalDate —
+  // same fallback logic this component always used.
+  //
+  // Important: we no longer filter renewals by their original (r.year,
+  // r.month) schedule slot. Instead we filter by the EFFECTIVE date, so a
+  // renewal whose date was corrected into a different month/year (e.g. it
+  // slipped from July into August) now correctly shows up on the August
+  // calendar instead of staying stuck under July. The original (year,
+  // month) fields are untouched in the data — they still identify which
+  // renewal this is for payments/summary — only where it's *displayed*
+  // changes.
   const renewalsByDay = useMemo(() => {
     const map: Record<number, DayData["renewals"]> = {};
     contracts.forEach((c) => {
-      (c.renewalSchedule ?? [])
-        .filter((r) => r.year === year && r.month === month)
-        .forEach((r) => {
-          const date = new Date(c.firstRenewalDate);
-          let day = date.getDate();
-          // If the firstRenewalDate is not in this month, distribute by contract id
-          if (date.getFullYear() !== year || date.getMonth() + 1 !== month) {
+      (c.renewalSchedule ?? []).forEach((r) => {
+        let effectiveDate: Date;
+        if (r.actualDueDate) {
+          effectiveDate = new Date(r.actualDueDate);
+        } else {
+          const firstDate = new Date(c.firstRenewalDate);
+          let day = firstDate.getDate();
+          // If the firstRenewalDate is not in this renewal's own month, distribute by contract id
+          if (firstDate.getFullYear() !== r.year || firstDate.getMonth() + 1 !== r.month) {
             day = (parseInt(c.id.replace(/\D/g, "").slice(-4) || "1") % 28) + 1;
           }
-          if (!map[day]) map[day] = [];
-          map[day].push({
-            clientName:  c.clientName,
-            salesperson: c.salesperson,
-            amount:      r.amount,
-            status:      r.status,
-            product:     c.product,
-            contractId:  c.id,
-          });
+          effectiveDate = new Date(r.year, r.month - 1, day);
+        }
+        if (effectiveDate.getFullYear() !== year || effectiveDate.getMonth() + 1 !== month) return;
+        const day = effectiveDate.getDate();
+        if (!map[day]) map[day] = [];
+        map[day].push({
+          clientName:  c.clientName,
+          salesperson: c.salesperson,
+          amount:      r.amount,
+          status:      r.status,
+          product:     c.product,
+          contractId:  c.id,
         });
+      });
     });
     return map;
   }, [contracts, year, month]);

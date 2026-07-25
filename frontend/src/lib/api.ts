@@ -42,6 +42,7 @@ export function useContracts() {
           month: r.month,
           amount: r.overriddenAmount ?? r.amount,
           status: r.status,
+          actualDueDate: r.actualDueDate ?? null,
           payments: (c.payments ?? []).filter(
             (p: any) => p.renewalYear === r.year && p.renewalMonth === r.month
           ),
@@ -239,6 +240,31 @@ export function useUpdateRenewalStatus() {
       apiFetch(`/renewals/${contractId}/${year}/${month}/status`, {
         method: "PATCH",
         body: JSON.stringify({ status }),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["contracts"] }),
+  });
+}
+
+// ─── Renewal date override (correct a single renewal's exact due date) ──────
+// Pass date: null to clear a previously-set override and revert to the
+// calculated date. This only ever touches the one (contractId, year, month)
+// renewal — invalidating ['contracts'] is what makes the corrected date
+// reflect everywhere (Calendar, Client page, Dashboard) without any of
+// those components needing individual changes.
+export function useUpdateRenewalDate() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      contractId, year, month, date,
+    }: {
+      contractId: string;
+      year: number;
+      month: number;
+      date: string | null; // ISO date string, e.g. "2026-07-15"
+    }) =>
+      apiFetch(`/renewals/${contractId}/${year}/${month}/date`, {
+        method: "PATCH",
+        body: JSON.stringify({ date }),
       }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["contracts"] }),
   });

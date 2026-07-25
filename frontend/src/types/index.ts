@@ -43,6 +43,11 @@ export interface RenewalMonth {
   amount: number;
   status: PaymentStatus;
   payments: Payment[];
+  // Manually-corrected due date (ISO string), e.g. a 2-3 day extension, or a
+  // shift into a different month/year entirely. Undefined/null = no manual
+  // correction — fall back to calculating the date from
+  // Contract.firstRenewalDate + (year, month) as before.
+  actualDueDate?: string | null;
 }
 
 export interface Payment {

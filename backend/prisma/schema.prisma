@@ -90,6 +90,15 @@ model RenewalMonth {
   amount           Float
   overriddenAmount Float?
   status           PaymentStatus @default(pending)
+  // Manually-corrected due date for this single renewal (e.g. a 2-3 day
+  // extension). NULL means "no override" — the effective due date is still
+  // derived from Contract.firstRenewalDate + (year, month) as before.
+  // This can fall in a different month/year than `year`/`month` above —
+  // those two fields stay fixed as the renewal's original schedule slot
+  // (used for grouping/summary/payment-matching); actualDueDate is only
+  // ever used for *display* of the true due date. Editing this NEVER
+  // touches any other RenewalMonth row.
+  actualDueDate    DateTime?
   contract         Contract      @relation(fields: [contractId], references: [id], onDelete: Cascade)
 
   @@unique([contractId, year, month])

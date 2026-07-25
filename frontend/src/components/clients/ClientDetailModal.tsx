@@ -676,6 +676,12 @@ export function ClientDetailModal({ open, onClose, contracts, onMarkPayment, isS
                       (p) => p.contractId === r.contract.id && p.renewalYear === r.year && p.renewalMonth === r.month
                     );
 
+                    // r.actualDueDate is a manually-corrected date for this
+                    // single renewal (set via the Renewals table). When
+                    // present, show it alongside the original month/year
+                    // label instead of silently keeping the old date.
+                    const hasCorrectedDate = !!(r as any).actualDueDate;
+
                     return (
                       <div key={key}>
                         <div className={cn("flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl border transition-all",
@@ -683,7 +689,14 @@ export function ClientDetailModal({ open, onClose, contracts, onMarkPayment, isS
                           <div className="flex items-center gap-2 min-w-0">
                             <CalendarDays className="w-3 h-3 text-slate-400 flex-shrink-0" />
                             <div className="min-w-0">
-                              <p className="text-xs font-medium text-slate-600">{getMonthShort(r.month)} {r.year}</p>
+                              <p className="text-xs font-medium text-slate-600 flex items-center gap-1.5">
+                                {getMonthShort(r.month)} {r.year}
+                                {hasCorrectedDate && (
+                                  <span className="text-[10px] font-semibold text-accent bg-accent-light border border-accent-border px-1 py-0.5 rounded">
+                                    due {new Date((r as any).actualDueDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                                  </span>
+                                )}
+                              </p>
                               <p className="text-[10px] text-slate-400 truncate">{r.contract.product}</p>
                             </div>
                           </div>
