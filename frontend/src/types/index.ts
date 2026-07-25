@@ -13,7 +13,7 @@ export type ProductType =
   | "DM + GMB + SMM + SEO"
   | string;
 
-export type PaymentStatus = "pending" | "partial" | "collected" | "overdue" | "waived";
+export type PaymentStatus = "pending" | "partial" | "collected" | "overdue" | "waived" | "promised";
 export type GSTStatus = "Y" | "N";
 
 export type ContractStatus = "active" | "stopped";

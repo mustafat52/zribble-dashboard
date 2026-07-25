@@ -36,6 +36,11 @@ export function StatusBadge({ status, size = "md" }: StatusBadgeProps) {
     pending:   "text-accent bg-accent-light border-accent-border",
     overdue:   "text-accent-red bg-accent-redLight border-red-200",
     waived:    "text-slate-500 bg-slate-100 border-slate-200",
+    // Renewed, ₹0 collected, but a full-balance promise exists for a
+    // future date — deliberately NOT the same color as "partial" (some
+    // money already in hand) or plain "pending" (nothing has happened at
+    // all). Purple keeps it visually distinct from both.
+    promised:  "text-accent-purple bg-purple-50 border-purple-200",
   };
   const dot: Record<PaymentStatus, string> = {
     collected: "bg-accent-green",
@@ -43,6 +48,7 @@ export function StatusBadge({ status, size = "md" }: StatusBadgeProps) {
     pending:   "bg-accent",
     overdue:   "bg-accent-red",
     waived:    "bg-slate-400",
+    promised:  "bg-accent-purple",
   };
   return (
     <span className={cn("inline-flex items-center gap-1.5 rounded-full border font-medium", styles[status], sizes[size])}>

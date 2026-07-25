@@ -2,6 +2,7 @@ import { Router, Request, Response } from "express";
 import { prisma } from "../lib/prisma";
 import { authenticate } from "../middleware/auth";
 import { canWrite } from "../middleware/role";
+import { recalcRenewalStatus } from "../lib/renewalStatus";
 
 const router = Router();
 router.use(authenticate);
@@ -24,8 +25,20 @@ router.post("/", canWrite, async (req: Request, res: Response) => {
       type?: "renewal" | "onboarding";
     };
 
-    if (!contractId || !renewalYear || !renewalMonth || !amount || !paidOn) {
+    // BUG FIX: this used to check `!amount`, which is true for 0 — so a
+    // legitimate "₹0 collected now, rest fully promised for later" payment
+    // (amount: 0) was silently rejected with a 400 here. Because the request
+    // failed, no Payment row was ever created, so recalcRenewalStatus()
+    // never ran, and RenewalMonth.status stayed stuck on "pending" even
+    // though a promise had been correctly saved for the full balance.
+    // amount === 0 is a valid, meaningful value and must be allowed through;
+    // only missing/negative amounts are actually invalid.
+    if (!contractId || !renewalYear || !renewalMonth || amount === undefined || amount === null || !paidOn) {
       res.status(400).json({ error: "contractId, renewalYear, renewalMonth, amount, and paidOn are required" });
+      return;
+    }
+    if (amount < 0) {
+      res.status(400).json({ error: "amount cannot be negative" });
       return;
     }
 
@@ -112,39 +125,5 @@ router.delete("/:id", canWrite, async (req: Request, res: Response) => {
     res.status(500).json({ error: "Failed to delete payment" });
   }
 });
-
-// ── Helper: recalculate RenewalMonth.status ───────────────────────────────────
-async function recalcRenewalStatus(contractId: string, year: number, month: number) {
-  const renewalMonthRow = await prisma.renewalMonth.findUnique({
-    where: { contractId_year_month: { contractId, year, month } },
-  });
-
-  if (!renewalMonthRow) return;
-
-  // Skip if manually set to overdue or waived — those are intentional overrides
-  if (renewalMonthRow.status === "overdue" || renewalMonthRow.status === "waived") return;
-
-  const allPayments = await prisma.payment.aggregate({
-    where: { contractId, renewalYear: year, renewalMonth: month, type: "renewal" },
-    _sum: { amount: true },
-  });
-
-  const totalPaid = allPayments._sum.amount ?? 0;
-  const due = renewalMonthRow.overriddenAmount ?? renewalMonthRow.amount;
-
-  let newStatus: "pending" | "partial" | "collected";
-  if (totalPaid <= 0) {
-    newStatus = "pending";
-  } else if (totalPaid >= due) {
-    newStatus = "collected";
-  } else {
-    newStatus = "partial";
-  }
-
-  await prisma.renewalMonth.update({
-    where: { contractId_year_month: { contractId, year, month } },
-    data: { status: newStatus },
-  });
-}
 
 export default router;

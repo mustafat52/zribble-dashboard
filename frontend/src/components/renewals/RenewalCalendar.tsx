@@ -218,13 +218,15 @@ export function RenewalCalendar({ year, month, promises, salesperson }: RenewalC
                   r.status === "collected" ? "bg-accent-greenLight border-emerald-200" :
                   r.status === "overdue"   ? "bg-accent-redLight border-red-200" :
                   r.status === "partial"   ? "bg-accent-amberLight border-amber-200" :
+                  r.status === "promised"  ? "bg-purple-50 border-purple-200" :
                   "bg-slate-100 border-slate-200")}>
                   <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: SALESPERSON_COLORS[r.salesperson] }} />
                   <span className="text-[10px] text-slate-600 truncate flex-1 leading-tight">{r.clientName}</span>
                   <span className={cn("text-[9px] font-semibold flex-shrink-0",
                     r.status === "collected" ? "text-accent-green" :
                     r.status === "overdue"   ? "text-accent-red" :
-                    r.status === "partial"   ? "text-accent-amber" : "text-slate-500")}>
+                    r.status === "partial"   ? "text-accent-amber" :
+                    r.status === "promised"  ? "text-accent-purple" : "text-slate-500")}>
                     {formatCurrency(r.amount)}
                   </span>
                 </div>
@@ -256,6 +258,7 @@ export function RenewalCalendar({ year, month, promises, salesperson }: RenewalC
           { color: "bg-accent-greenLight border-emerald-200", label: "Collected"         },
           { color: "bg-accent-amberLight border-amber-200",   label: "Partial"           },
           { color: "bg-accent-redLight border-red-200",       label: "Overdue"           },
+          { color: "bg-purple-50 border-purple-200",          label: "Promised"          },
           { color: "bg-amber-50 border-amber-300",            label: "Payment promise"   },
         ].map(({ color, label }) => (
           <div key={label} className="flex items-center gap-1.5">

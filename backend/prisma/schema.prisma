@@ -25,6 +25,7 @@ enum PaymentStatus {
   collected
   overdue
   waived
+  promised
 }
 
 enum GSTStatus {

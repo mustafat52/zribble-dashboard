@@ -2,6 +2,7 @@ import { Router, Request, Response } from "express";
 import { prisma } from "../lib/prisma";
 import { authenticate } from "../middleware/auth";
 import { canWrite } from "../middleware/role";
+import { recalcRenewalStatus } from "../lib/renewalStatus";
 
 const router = Router();
 router.use(authenticate);
@@ -76,6 +77,13 @@ router.post("/", canWrite, async (req: Request, res: Response) => {
       },
     });
 
+    // NEW: a promise on its own used to be purely informational — it never
+    // touched RenewalMonth.status, which is why a renewal with ₹0 collected
+    // but a full balance promised for later stayed stuck on "pending."
+    // Recalculating here lets a ₹0-paid renewal resolve to "promised"
+    // instead, as long as an active promise now exists for it.
+    await recalcRenewalStatus(contractId, Number(renewalYear), Number(renewalMonth));
+
     res.status(201).json(promise);
   } catch (err) {
     console.error(err);
@@ -109,6 +117,13 @@ router.delete("/:id", canWrite, async (req: Request, res: Response) => {
     }
 
     await prisma.promise.delete({ where: { id: req.params.id } });
+
+    // NEW: if this was the only promise keeping the renewal at "promised"
+    // (₹0 collected, no other promise left), deleting it should drop the
+    // status back to "pending" — otherwise a stale "promised" badge would
+    // stick around with nothing backing it.
+    await recalcRenewalStatus(promise.contractId, promise.renewalYear, promise.renewalMonth);
+
     res.json({ success: true });
   } catch (err) {
     console.error(err);
