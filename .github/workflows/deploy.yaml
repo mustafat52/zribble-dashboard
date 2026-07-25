@@ -23,6 +23,7 @@ jobs:
             # Backend
             cd backend
             /usr/local/bin/npm install
+            /usr/local/bin/npx prisma generate
             /usr/local/bin/npm run build
             /usr/local/bin/npx prisma migrate deploy
             /usr/local/bin/pm2 restart zribble-backend
