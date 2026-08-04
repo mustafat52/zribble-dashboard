@@ -210,16 +210,25 @@ router.patch(
 );
 
 // ── Shared: calculate a renewal's fallback due date when no manual
-// actualDueDate override exists. MUST stay identical to the equivalent
-// logic in frontend/src/components/renewals/RenewalTable.tsx and
-// RenewalCalendar.tsx (calculatedDueDate/effectiveDueDate) — this is the
-// backend's authoritative version, used only for computing cascade shifts.
-function calculatedDueDate(firstRenewalDate: string, contractId: string, year: number, month: number): Date {
+// actualDueDate override exists.
+//
+// FIX: this used to fall back to a pseudo-random hash day (derived from the
+// contract ID) whenever a renewal's (year, month) slot didn't match
+// firstRenewalDate's own month. That hash was never a real date — it only
+// existed on the frontend to spread renewals visually across different
+// days — but this backend copy used it as the basis for CASCADE SHIFT MATH,
+// which is exactly why a cascade produced nonsense like "15 Nov 2026"
+// instead of the correct "1 Nov 2026". Since calcRenewalSchedule()
+// (new-entry/page.tsx) generates every renewal by repeatedly calling
+// date.setMonth(), a renewal's real day-of-month is simply the same as
+// firstRenewalDate's day, clamped to whatever the target month actually has
+// (e.g. day 31 landing in a 30-day month).
+// MUST stay identical to the equivalent logic in
+// frontend/src/components/renewals/RenewalTable.tsx and RenewalCalendar.tsx.
+function calculatedDueDate(firstRenewalDate: string, year: number, month: number): Date {
   const firstDate = new Date(firstRenewalDate);
-  let day = firstDate.getDate();
-  if (firstDate.getFullYear() !== year || firstDate.getMonth() + 1 !== month) {
-    day = (parseInt(contractId.replace(/\D/g, "").slice(-4) || "1") % 28) + 1;
-  }
+  const daysInTargetMonth = new Date(year, month, 0).getDate();
+  const day = Math.min(firstDate.getDate(), daysInTargetMonth);
   return new Date(year, month - 1, day);
 }
 
@@ -304,7 +313,7 @@ router.patch(
 
       // ── Cascading path ──────────────────────────────────────────────────
       const previousEffective = renewalMonth.actualDueDate
-        ?? calculatedDueDate(contract.firstRenewalDate, contractId, yearNum, monthNum);
+        ?? calculatedDueDate(contract.firstRenewalDate, yearNum, monthNum);
       const newEffective = new Date(date);
       const shiftDays = daysBetween(previousEffective, newEffective);
 
@@ -328,7 +337,7 @@ router.patch(
           continue;
         }
         if (shiftDays === 0) continue; // nothing to shift
-        const rowCalculated = calculatedDueDate(contract.firstRenewalDate, contractId, row.year, row.month);
+        const rowCalculated = calculatedDueDate(contract.firstRenewalDate, row.year, row.month);
         const rowShifted = new Date(rowCalculated);
         rowShifted.setDate(rowShifted.getDate() + shiftDays);
         toUpdate.push({ year: row.year, month: row.month, newDate: rowShifted });

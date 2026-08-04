@@ -109,17 +109,28 @@ export function RenewalCalendar({ year, month, promises, salesperson }: RenewalC
     : allContracts;
 
   // Group renewals by day using the corrected date if one was manually set
-  // (r.actualDueDate), otherwise the calculated date from firstRenewalDate —
-  // same fallback logic this component always used.
+  // (r.actualDueDate), otherwise the calculated date derived from
+  // firstRenewalDate.
   //
-  // Important: we no longer filter renewals by their original (r.year,
-  // r.month) schedule slot. Instead we filter by the EFFECTIVE date, so a
-  // renewal whose date was corrected into a different month/year (e.g. it
-  // slipped from July into August) now correctly shows up on the August
-  // calendar instead of staying stuck under July. The original (year,
-  // month) fields are untouched in the data — they still identify which
-  // renewal this is for payments/summary — only where it's *displayed*
-  // changes.
+  // IMPORTANT FIX: this used to fall back to a pseudo-random "hash" day
+  // (derived from the contract ID) for every renewal that didn't fall in
+  // the same month as firstRenewalDate — e.g. Oct/Jan/Apr renewals when
+  // firstRenewalDate was in July. That hash was never a real date; it only
+  // existed to spread renewals across different days visually. Because
+  // calcRenewalSchedule() (new-entry/page.tsx) actually generates every
+  // renewal by repeatedly calling date.setMonth(), each renewal's REAL
+  // day-of-month is simply the same as firstRenewalDate's day (clamped to
+  // whatever the target month actually has, e.g. day 31 in a 30-day month).
+  // Using the hash instead of this real math is what produced nonsense
+  // like "15 Nov" after a cascade shift, instead of the correct "1 Nov".
+  //
+  // We also no longer filter renewals by their original (r.year, r.month)
+  // schedule slot. Instead we filter by the EFFECTIVE date, so a renewal
+  // whose date was corrected into a different month/year (e.g. it slipped
+  // from July into August) now correctly shows up on the August calendar
+  // instead of staying stuck under July. The original (year, month) fields
+  // are untouched in the data — they still identify which renewal this is
+  // for payments/summary — only where it's *displayed* changes.
   const renewalsByDay = useMemo(() => {
     const map: Record<number, DayData["renewals"]> = {};
     contracts.forEach((c) => {
@@ -129,11 +140,8 @@ export function RenewalCalendar({ year, month, promises, salesperson }: RenewalC
           effectiveDate = new Date(r.actualDueDate);
         } else {
           const firstDate = new Date(c.firstRenewalDate);
-          let day = firstDate.getDate();
-          // If the firstRenewalDate is not in this renewal's own month, distribute by contract id
-          if (firstDate.getFullYear() !== r.year || firstDate.getMonth() + 1 !== r.month) {
-            day = (parseInt(c.id.replace(/\D/g, "").slice(-4) || "1") % 28) + 1;
-          }
+          const daysInTargetMonth = new Date(r.year, r.month, 0).getDate();
+          const day = Math.min(firstDate.getDate(), daysInTargetMonth);
           effectiveDate = new Date(r.year, r.month - 1, day);
         }
         if (effectiveDate.getFullYear() !== year || effectiveDate.getMonth() + 1 !== month) return;

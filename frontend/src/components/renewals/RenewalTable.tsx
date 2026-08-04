@@ -28,16 +28,23 @@ const STATUSES: { label: string; value: PaymentStatus | "all" }[] = [
 type SortKey = "clientName" | "salesperson" | "amount" | "status";
 type SortDir  = "asc" | "desc";
 
-// Calculated fallback date when no manual override (r.actualDueDate) exists —
-// mirrors the logic RenewalCalendar.tsx uses, kept in sync with it.
-// TODO: worth extracting to lib/utils.ts as a shared helper if a third
-// component ends up needing this (Section 7.3-style drift risk otherwise).
+// Calculated fallback date when no manual override (r.actualDueDate) exists.
+//
+// FIX: this used to fall back to a pseudo-random hash day (derived from the
+// contract ID) for any renewal whose original (year, month) slot didn't
+// match firstRenewalDate's own month. That hash was never a real date — it
+// only existed to spread renewals visually — and cascading a date shift on
+// top of it produced nonsense results (e.g. "15 Nov" instead of "1 Nov").
+// Since calcRenewalSchedule() (new-entry/page.tsx) generates every renewal
+// by repeatedly calling date.setMonth(), a renewal's real day-of-month is
+// simply the same as firstRenewalDate's day, clamped to whatever the target
+// month actually has (e.g. day 31 landing in a 30-day month).
+// MUST stay identical to the equivalent logic in RenewalCalendar.tsx and
+// backend/src/routes/renewals.ts.
 function calculatedDueDate(c: Contract, r: RenewalMonth): Date {
   const firstDate = new Date(c.firstRenewalDate);
-  let day = firstDate.getDate();
-  if (firstDate.getFullYear() !== r.year || firstDate.getMonth() + 1 !== r.month) {
-    day = (parseInt(c.id.replace(/\D/g, "").slice(-4) || "1") % 28) + 1;
-  }
+  const daysInTargetMonth = new Date(r.year, r.month, 0).getDate();
+  const day = Math.min(firstDate.getDate(), daysInTargetMonth);
   return new Date(r.year, r.month - 1, day);
 }
 
@@ -73,12 +80,23 @@ export function RenewalTable({ year, month, onMarkPayment, salesperson }: Renewa
   // Pull live data from API cache — replaces getRenewalsForMonth() from mock-data
   const { data: contracts = [], isLoading } = useActiveContracts();
 
+  // FIX: this used to filter by each renewal's original (r.year, r.month)
+  // schedule slot, so a renewal manually corrected into a different month
+  // (e.g. July → 1 Aug) stayed stuck showing under July's table and never
+  // appeared under August. We now filter by the EFFECTIVE date instead —
+  // same fix already applied to RenewalCalendar.tsx. The original
+  // (year, month) fields are untouched in the data (still used for
+  // payments/summary matching) — only which month's table this row
+  // *displays* under changes.
   const raw = useMemo(() => {
     return contracts.flatMap((c) => {
       // If locked to a salesperson (employee login), filter here
       if (salesperson && c.salesperson !== salesperson) return [];
       return (c.renewalSchedule ?? [])
-        .filter((r) => r.year === year && r.month === month)
+        .filter((r) => {
+          const eff = effectiveDueDate(c, r);
+          return eff.getFullYear() === year && eff.getMonth() + 1 === month;
+        })
         .map((r) => ({ contract: c, renewal: r }));
     });
   }, [contracts, year, month, salesperson]);

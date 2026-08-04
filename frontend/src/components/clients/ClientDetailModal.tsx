@@ -32,6 +32,24 @@ const PRODUCTS = [
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface PromiseRow { date: string; amount: string; notes: string; }
 
+// Calculated fallback date when no manual override (r.actualDueDate) exists.
+// Same fix as RenewalTable.tsx / RenewalCalendar.tsx / backend renewals.ts —
+// real date math (firstRenewalDate's day-of-month, clamped to the target
+// month's length) instead of the old pseudo-random hash fallback.
+// NOTE: this is now duplicated across 3 frontend files + 1 backend file.
+// Worth extracting to lib/utils.ts as a single shared helper — flagging
+// this explicitly since keeping 4 copies in sync is exactly the kind of
+// drift risk your own docs call out elsewhere.
+function calculatedDueDate(firstRenewalDate: string, year: number, month: number): Date {
+  const firstDate = new Date(firstRenewalDate);
+  const daysInTargetMonth = new Date(year, month, 0).getDate();
+  const day = Math.min(firstDate.getDate(), daysInTargetMonth);
+  return new Date(year, month - 1, day);
+}
+function effectiveDueDate(firstRenewalDate: string, year: number, month: number, actualDueDate?: string | null): Date {
+  return actualDueDate ? new Date(actualDueDate) : calculatedDueDate(firstRenewalDate, year, month);
+}
+
 // ─── Contract Edit Form ───────────────────────────────────────────────────────
 interface ContractEditFormProps {
   contract: Contract;
@@ -446,10 +464,21 @@ export function ClientDetailModal({ open, onClose, contracts, onMarkPayment, isS
 
   const allRenewals = activeContracts
     .flatMap((c) => c.renewalSchedule.map((r) => ({ ...r, contract: c })))
-    .sort((a, b) => (a.year*100+a.month) - (b.year*100+b.month));
+    .sort((a, b) =>
+      effectiveDueDate(a.contract.firstRenewalDate, a.year, a.month, (a as any).actualDueDate).getTime()
+      - effectiveDueDate(b.contract.firstRenewalDate, b.year, b.month, (b as any).actualDueDate).getTime()
+    );
 
+  // Grouped by the EFFECTIVE due date's year, not the original (year, month)
+  // schedule slot — otherwise a renewal cascaded across a year boundary
+  // (e.g. Dec 2026 shifted into Jan 2027) would still show under the 2026
+  // header even though it's actually due in 2027.
   const byYear: Record<number, typeof allRenewals> = {};
-  allRenewals.forEach((r) => { if(!byYear[r.year]) byYear[r.year]=[]; byYear[r.year].push(r); });
+  allRenewals.forEach((r) => {
+    const effYear = effectiveDueDate(r.contract.firstRenewalDate, r.year, r.month, (r as any).actualDueDate).getFullYear();
+    if(!byYear[effYear]) byYear[effYear]=[];
+    byYear[effYear].push(r);
+  });
 
 
   // All real payments ever made for this client, newest first
@@ -677,10 +706,12 @@ export function ClientDetailModal({ open, onClose, contracts, onMarkPayment, isS
                     );
 
                     // r.actualDueDate is a manually-corrected date for this
-                    // single renewal (set via the Renewals table). When
-                    // present, show it alongside the original month/year
-                    // label instead of silently keeping the old date.
+                    // single renewal (set via the Renewals table). We show
+                    // ONE clean date here — the effective one — rather than
+                    // both the original month label and a separate "due X"
+                    // pill, which looked like two conflicting dates at once.
                     const hasCorrectedDate = !!(r as any).actualDueDate;
+                    const displayDate = effectiveDueDate(r.contract.firstRenewalDate, r.year, r.month, (r as any).actualDueDate);
 
                     return (
                       <div key={key}>
@@ -690,10 +721,10 @@ export function ClientDetailModal({ open, onClose, contracts, onMarkPayment, isS
                             <CalendarDays className="w-3 h-3 text-slate-400 flex-shrink-0" />
                             <div className="min-w-0">
                               <p className="text-xs font-medium text-slate-600 flex items-center gap-1.5">
-                                {getMonthShort(r.month)} {r.year}
+                                {displayDate.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
                                 {hasCorrectedDate && (
-                                  <span className="text-[10px] font-semibold text-accent bg-accent-light border border-accent-border px-1 py-0.5 rounded">
-                                    due {new Date((r as any).actualDueDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                                  <span title="Manually corrected date" className="text-[9px] font-semibold text-accent bg-accent-light border border-accent-border px-1 py-0.5 rounded">
+                                    edited
                                   </span>
                                 )}
                               </p>
