@@ -36,6 +36,19 @@ import {
 function tokenizeProduct(product: string): string[] {
   return product.split("+").map((s) => s.trim()).filter(Boolean);
 }
+
+// Number of distinct atomic services a client's contracts represent,
+// tokenized — so a single combo contract (one row whose product string is
+// e.g. "DM + SMM") correctly counts as 2 services, not 1. Using the raw
+// number of contract ROWS (cs.length) here — which this file used to do —
+// makes any combo-priced client (one contract, multiple bundled services)
+// invisible to "multi-service" detection, even though they obviously have
+// multiple services. This is what actually drives the "Multi-Service" KPI,
+// the multiOnly filter toggle, and the "X services" badge in the client list.
+function clientServiceCount(cs: { product: string }[]): number {
+  return new Set(cs.flatMap((c) => tokenizeProduct(c.product))).size;
+}
+
 const PRODUCT_COLORS = [
   "#4F46E5","#0891B2","#7C3AED","#059669","#D97706","#DC2626",
   "#8B5CF6","#0D9488","#F59E0B","#EF4444",
@@ -187,7 +200,11 @@ export default function InsightsPage() {
 
   const visibleClients = useMemo(() =>
     Object.entries(clientMap).filter(([name, cs]) => {
-      if (multiOnly && cs.length <= 1) return false;
+      // FIX: was `cs.length <= 1` (contract row count) — now uses the
+      // tokenized service count, so a combo contract with 2+ bundled
+      // services correctly counts as multi-service even though it's a
+      // single row.
+      if (multiOnly && clientServiceCount(cs) <= 1) return false;
       // Hide clients with no renewals in the selected month range
       const rangePipeline = cs.reduce((a, c) =>
         a + (c.renewalSchedule ?? []).filter((r) => {
@@ -232,8 +249,11 @@ export default function InsightsPage() {
     return Object.entries(map).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value).slice(0, 8);
   }, [filteredWithMonthRange]);
 
+  // FIX: was `cs.length > 1` (contract row count) — now uses the tokenized
+  // service count. A combo client (1 contract row, e.g. "DM + SMM") is a
+  // multi-service client too, and was previously invisible here entirely.
   const multiServiceClients = useMemo(() =>
-    Object.entries(clientMap).filter(([, cs]) => cs.length > 1).sort((a, b) => b[1].length - a[1].length),
+    Object.entries(clientMap).filter(([, cs]) => clientServiceCount(cs) > 1).sort((a, b) => clientServiceCount(b[1]) - clientServiceCount(a[1])),
     [clientMap]);
 
   const execPipeline = useMemo(() => {
@@ -260,6 +280,9 @@ export default function InsightsPage() {
   );
   const totalContracts = clientsInRange.reduce((a, [, cs]) => a + cs.length, 0);
   const totalClients   = clientsInRange.length;
+  // FIX: was based on the old cs.length>1 multiServiceClients list — now
+  // inherits the tokenized-count fix automatically since multiServiceClients
+  // itself is fixed above.
   const multiCount     = multiServiceClients.filter(([, cs]) =>
     cs.some((c) => (c.renewalSchedule ?? []).some((r) => {
       const col = `${["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][r.month-1]}-${r.year}`;
@@ -716,6 +739,7 @@ export default function InsightsPage() {
                       const col = `${["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][r.month-1]}-${r.year}`;
                       return selectedMonthCols.includes(col);
                     }).reduce((b, r) => b + r.amount, 0), 0);
+                  const serviceCount = clientServiceCount(cs);
                   return (
                     <div key={name} className="flex items-center gap-4 px-5 py-3 hover:bg-slate-50/80 transition-colors">
                       <div className="w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold flex-shrink-0" style={{ backgroundColor:color+"15", color }}>
@@ -724,9 +748,9 @@ export default function InsightsPage() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <ClientLink clientName={name} salesperson={cs[0].salesperson}/>
-                          {cs.length > 1 && (
+                          {serviceCount > 1 && (
                             <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-accent-amberLight text-accent-amber border border-amber-200">
-                              {cs.length} services
+                              {serviceCount} services
                             </span>
                           )}
                         </div>
