@@ -15,19 +15,10 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { PaymentStatus } from "@/types";
-import { usePromises, useDeletePromise, useOnboarding, useNotes, useCreateNote } from "@/lib/api";
+import { usePromises, useDeletePromise, useOnboarding, useNotes, useCreateNote,useAccountManagers, useServices } from "@/lib/api";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const ACCOUNT_MANAGERS = [
-  "Khushi","Gunjan","Kshitiz","Gaurav","Hitesh","Jenil","Hamza",
-  "Kritika","Rayyan","Danish","Danish S","Saanya","Latika","Chetan","Khasim",
-];
 
-const PRODUCTS = [
-  "DM Single","GMB Single","SMM Single",
-  "DM + GMB","DM + SMM","GMB + SMM","GMB + SEO",
-  "DM + GMB + SMM","GMB + SMM + SEO","DM + GMB + SMM + SEO",
-];
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface PromiseRow { date: string; amount: string; notes: string; }
@@ -65,6 +56,11 @@ function ContractEditForm({ contract, onSave, onCancel }: ContractEditFormProps)
   const [profiles,   setProfiles]   = useState(String(contract.profiles));
   const [gst,        setGst]        = useState(contract.gstStatus);
 
+  const { data: accountManagers = [] } = useAccountManagers();
+  const { data: services = [] } = useServices();
+  const productOptions = Array.from(new Set([...services.filter((s) => s.isActive).map((s) => s.name), contract.product]));
+  const amOptions = Array.from(new Set([...accountManagers, contract.accountManager]));
+
   function handleSave() {
     const changes: Partial<Contract> = {};
     if (product   !== contract.product)                changes.product              = product;
@@ -87,7 +83,7 @@ function ContractEditForm({ contract, onSave, onCancel }: ContractEditFormProps)
         <div className="col-span-2">
           <label className={labelCls}>Service / Product</label>
           <select value={product} onChange={(e) => setProduct(e.target.value)} className={inputCls}>
-            {PRODUCTS.map((p) => <option key={p} value={p}>{p}</option>)}
+            {productOptions.map((p) => <option key={p} value={p}>{p}</option>)}
           </select>
         </div>
         <div>
@@ -100,7 +96,7 @@ function ContractEditForm({ contract, onSave, onCancel }: ContractEditFormProps)
         <div>
           <label className={labelCls}>Account Manager</label>
           <select value={am} onChange={(e) => setAm(e.target.value)} className={inputCls}>
-            {ACCOUNT_MANAGERS.map((m) => <option key={m} value={m}>{m}</option>)}
+            {amOptions.map((m) => <option key={m} value={m}>{m}</option>)}
           </select>
         </div>
         <div>
