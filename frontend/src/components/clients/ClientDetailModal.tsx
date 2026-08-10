@@ -58,8 +58,21 @@ function ContractEditForm({ contract, onSave, onCancel }: ContractEditFormProps)
 
   const { data: accountManagers = [] } = useAccountManagers();
   const { data: services = [] } = useServices();
-  const productOptions = Array.from(new Set([...services.filter((s) => s.isActive).map((s) => s.name), contract.product]));
-  const amOptions = Array.from(new Set([...accountManagers, contract.accountManager]));
+  // Case-insensitive dedup: if "hamza" and "Hamza" both exist in the data
+  // (a DB entry-consistency issue, not a code bug), keep only one entry —
+  // preferring whichever casing appears in the live accountManagers list
+  // (the "canonical" one) over a stray differently-cased value.
+  function dedupeCaseInsensitive(values: string[]): string[] {
+    const seen = new Map<string, string>(); // lowercase key -> first-seen original casing
+    for (const v of values) {
+      const key = v.trim().toLowerCase();
+      if (!seen.has(key)) seen.set(key, v);
+    }
+    return Array.from(seen.values());
+  }
+
+  const productOptions = dedupeCaseInsensitive([...services.filter((s) => s.isActive).map((s) => s.name), contract.product]);
+  const amOptions = dedupeCaseInsensitive([...accountManagers, contract.accountManager]);
 
   function handleSave() {
     const changes: Partial<Contract> = {};
