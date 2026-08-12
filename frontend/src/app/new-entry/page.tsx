@@ -6,7 +6,7 @@ import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
 import { StatusBadge } from "@/components/ui/Badge";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/Card";
-import { formatCurrency, getMonthShort, SALESPERSON_COLORS } from "@/lib/utils";
+import { formatCurrency, getMonthShort, SALESPERSON_COLORS, dedupeCaseInsensitive } from "@/lib/utils";
 import { NewContractForm, GSTStatus } from "@/types";
 import { useClient } from "@/lib/client-context";
 import { useAuth } from "@/lib/auth-context";
@@ -177,7 +177,9 @@ export default function NewEntryPage() {
   const { addOnboardingPayment, addNote: addClientNote, addPromise } = useClient();
 
   const createContractMutation = useCreateContract();
-  const { data: amUsers = [] }          = useAccountManagers();
+  const { data: amUsersRaw = [] }       = useAccountManagers();
+  const amUsers = dedupeCaseInsensitive(amUsersRaw).sort();
+
   const { data: salespersonUsers = [] } = useSalespersons();
 
   // Product / Service options — sourced live from the Service table.

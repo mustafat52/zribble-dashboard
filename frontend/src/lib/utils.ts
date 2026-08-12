@@ -133,3 +133,19 @@ export function parseMonthCol(col: string): { year: number; month: number } {
 export function effectiveAmount(renewal: { amount: number; overriddenAmount?: number }): number {
   return renewal.overriddenAmount ?? renewal.amount;
 }
+
+
+
+// Case-insensitive dedup for name lists (account managers, products, etc.)
+// where the same value may exist with inconsistent casing in the DB
+// (e.g. "Hamza" and "hamza" as separate rows). Keeps the first-seen casing
+// for each unique lowercase value. Shared across ClientDetailModal, Sidebar,
+// and Insights so all three stay in sync instead of duplicating this logic.
+export function dedupeCaseInsensitive(values: string[]): string[] {
+  const seen = new Map<string, string>();
+  for (const v of values) {
+    const key = v.trim().toLowerCase();
+    if (!seen.has(key)) seen.set(key, v);
+  }
+  return Array.from(seen.values());
+}

@@ -44,12 +44,32 @@ router.get("/account-managers", async (req: Request, res: Response) => {
       return;
     }
 
-    const groups = await prisma.contract.groupBy({
-      by: ["accountManager"],
-      orderBy: { accountManager: "asc" },
-    });
+    // Merge two sources: names that already have contracts, AND real
+    // account_manager-role Users who may not have any contracts yet
+    // (e.g. a brand-new hire). Without this second source, a new AM
+    // stays invisible in every dropdown until their first contract is
+    // created — which is backwards, since you need to pick them in a
+    // dropdown to assign that first contract in the first place.
+    const [contractGroups, amUsers] = await Promise.all([
+      prisma.contract.groupBy({ by: ["accountManager"] }),
+      prisma.user.findMany({
+        where: { role: "account_manager", accountManager: { not: null } },
+        select: { accountManager: true },
+      }),
+    ]);
 
-    res.json(groups.map((g) => g.accountManager));
+    const merged = [
+      ...contractGroups.map((g) => g.accountManager),
+      ...amUsers.map((u) => u.accountManager as string),
+    ];
+
+    // De-dupe exact matches here (case-sensitive de-dupe only, e.g. avoids
+    // returning "Suman" twice if she has contracts). Case-insensitive
+    // de-dupe (e.g. "Hamza"/"hamza") is handled on the frontend via
+    // dedupeCaseInsensitive, applied consistently across every dropdown.
+    const unique = Array.from(new Set(merged)).sort();
+
+    res.json(unique);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to fetch account managers" });

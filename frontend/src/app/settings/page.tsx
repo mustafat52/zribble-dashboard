@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth, AppUser, UserRole, EmployeeMode } from "@/lib/auth-context";
 import { PageWrapper } from "@/components/layout/PageWrapper";
-import { SALESPERSON_COLORS } from "@/lib/utils";
+import { SALESPERSON_COLORS, dedupeCaseInsensitive } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { useServices, useCreateService, useUpdateService, Service } from "@/lib/api";
 import {
@@ -323,12 +323,10 @@ export default function SettingsPage() {
   ).sort();
 
   // Same treatment for account manager names.
-  const existingAccountManagers = Array.from(
-    new Set(
-      users
-        .filter((u) => u.role === "account_manager" && u.accountManager)
-        .map((u) => u.accountManager as string)
-    )
+  const existingAccountManagers = dedupeCaseInsensitive(
+    users
+      .filter((u) => u.role === "account_manager" && u.accountManager)
+      .map((u) => u.accountManager as string)
   ).sort();
 
   function handleAdd(data: UserFormData) {

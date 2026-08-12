@@ -1,7 +1,7 @@
 "use client";
 import { useMemo } from "react";
 import { useActiveContracts } from "@/lib/api";
-import { SALESPERSON_COLORS } from "@/lib/utils";
+import { SALESPERSON_COLORS, dedupeCaseInsensitive } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 
 const EXECS = ["Aftab", "Sarvesh", "Firoz", "Idris", "Prajay", "Vinay"];
@@ -28,7 +28,7 @@ export function ExecSelector({ selected, onChange, dimension = "exec" }: ExecSel
   // contracts assigned, with no code change needed here.
   const names = useMemo(() => {
     if (dimension === "am") {
-      return Array.from(new Set(allContracts.map((c) => c.accountManager).filter(Boolean))).sort() as string[];
+      return dedupeCaseInsensitive(allContracts.map((c) => c.accountManager).filter(Boolean) as string[]).sort();
     }
     return EXECS;
   }, [allContracts, dimension]);

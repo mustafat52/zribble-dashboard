@@ -3,7 +3,7 @@ import { useState, useMemo } from "react";
 import { PageWrapper } from "@/components/layout/PageWrapper";
 import { useActiveContracts, useServices } from "@/lib/api";
 import { MONTH_COLS, parseMonthCol } from "@/lib/utils";
-import { formatCurrency, SALESPERSON_COLORS } from "@/lib/utils";
+import { formatCurrency, SALESPERSON_COLORS, dedupeCaseInsensitive } from "@/lib/utils";
 import { ClientLink } from "@/components/clients/ClientLink";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
@@ -104,14 +104,19 @@ export default function InsightsPage() {
 
   // Derived live from actual contract data — stays accurate as the team
   // changes; a new exec or AM hire appears automatically, no code change.
+
+  // Derived live from actual contract data — stays accurate as the team
+  // changes; a new exec or AM hire appears automatically, no code change.
   const ALL_SALESPERSONS = useMemo(
     () => Array.from(new Set(allContracts.map((c) => c.salesperson).filter(Boolean))).sort() as string[],
     [allContracts]
   );
+
   const ALL_AMS = useMemo(
-    () => Array.from(new Set(allContracts.map((c) => c.accountManager).filter(Boolean))).sort() as string[],
+    () => dedupeCaseInsensitive(allContracts.map((c) => c.accountManager).filter(Boolean) as string[]).sort(),
     [allContracts]
   );
+  
 
   const ALL_SERVICE_TOKENS = useMemo(() => {
     const activeNames = services.filter((s) => s.isActive).map((s) => s.name);

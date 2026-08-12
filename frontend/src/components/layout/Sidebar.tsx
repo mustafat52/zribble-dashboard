@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { cn, SALESPERSON_COLORS } from "@/lib/utils";
+import { cn, SALESPERSON_COLORS,dedupeCaseInsensitive } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
 import { useActiveContracts } from "@/lib/api";
 import {
@@ -53,9 +53,9 @@ export function Sidebar() {
   // team is larger (15+ names) and changes more frequently, so names are
   // derived live from contracts rather than hardcoded — a static order list
   // would drift from reality more easily here.
-  const accountManagerNames = Array.from(
-    new Set(contracts.map((c) => c.accountManager).filter(Boolean))
-  ).sort() as string[];
+  const accountManagerNames = dedupeCaseInsensitive(
+    contracts.map((c) => c.accountManager).filter(Boolean) as string[]
+  ).sort();
 
   const amAccountCounts: Record<string, number> = {};
   for (const name of accountManagerNames) {
