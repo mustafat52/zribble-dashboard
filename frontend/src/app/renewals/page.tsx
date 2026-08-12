@@ -16,8 +16,9 @@ type ViewMode = "calendar" | "table";
 interface PaymentTarget { contractId: string; year: number; month: number; }
 
 export default function RenewalsPage() {
-  const [year,          setYear]          = useState(2026);
-  const [month,         setMonth]         = useState(7);
+  const today = new Date();
+  const [year,          setYear]          = useState(today.getFullYear());
+  const [month,         setMonth]         = useState(today.getMonth() + 1);
   const [view,          setView]          = useState<ViewMode>("calendar");
   const [paymentTarget, setPaymentTarget] = useState<PaymentTarget | null>(null);
 
